@@ -150,22 +150,57 @@ public class RegionService {
      */
     private CoordinateResult parseGridCoordinates(String response) {
         try {
-            // #START7777와 #7777END 사이의 데이터 추출
-            Pattern pattern = Pattern.compile("#START7777.*?([0-9.]+),\\s*([0-9.]+),\\s*([0-9.]+),\\s*([0-9.]+)");
+            log.debug("파싱할 응답: {}", response);
+
+            // 멀티라인 응답 처리를 위한 패턴 수정
+            // #START7777 이후의 데이터 라인에서 숫자들을 추출
+            Pattern pattern = Pattern.compile(
+                    "#START7777.*?\\s+([0-9.]+),\\s*([0-9.]+),\\s*([0-9]+),\\s*([0-9]+)",
+                    Pattern.DOTALL  // 개행 문자도 . 패턴에 포함
+            );
+
             Matcher matcher = pattern.matcher(response);
 
             if (matcher.find()) {
-                // lon, lat, x, y 순서
-                BigDecimal x = new BigDecimal(matcher.group(3));
-                BigDecimal y = new BigDecimal(matcher.group(4));
+                // 응답에서 추출된 값들: lon, lat, x, y 순서
+                String lonStr = matcher.group(1);
+                String latStr = matcher.group(2);
+                String xStr = matcher.group(3);
+                String yStr = matcher.group(4);
+
+                log.debug("파싱된 값들 - LON: {}, LAT: {}, X: {}, Y: {}",
+                        lonStr, latStr, xStr, yStr);
+
+                BigDecimal x = new BigDecimal(xStr);
+                BigDecimal y = new BigDecimal(yStr);
 
                 log.debug("격자 좌표 변환 결과: X={}, Y={}", x, y);
                 return new CoordinateResult(x, y);
             } else {
+                // 대안 패턴: 라인별로 분리해서 처리
+                String[] lines = response.split("\n");
+                for (String line : lines) {
+                    log.debug("처리 중인 라인: '{}'", line.trim());
+                    // 숫자들이 포함된 데이터 라인 찾기
+                    if (line.trim().matches("\\s*[0-9.]+,\\s*[0-9.]+,\\s*[0-9]+,\\s*[0-9]+.*")) {
+                        String[] values = line.trim().split(",");
+                        if (values.length >= 4) {
+                            BigDecimal x = new BigDecimal(values[2].trim());
+                            BigDecimal y = new BigDecimal(values[3].trim());
+
+                            log.debug("라인별 파싱 성공 - X: {}, Y: {}", x, y);
+                            return new CoordinateResult(x, y);
+                        }
+                    }
+                }
+
                 log.error("격자 좌표 파싱 실패: 응답 형식이 올바르지 않음. response={}", response);
                 throw new WeatherException(WeatherErrorCode.API_RESPONSE_PARSING_ERROR);
             }
 
+        } catch (NumberFormatException e) {
+            log.error("숫자 변환 오류: {}", e.getMessage(), e);
+            throw new WeatherException(WeatherErrorCode.API_RESPONSE_PARSING_ERROR);
         } catch (Exception e) {
             log.error("격자 좌표 파싱 중 오류 발생: {}", response, e);
             throw new WeatherException(WeatherErrorCode.API_RESPONSE_PARSING_ERROR);
@@ -181,8 +216,15 @@ public class RegionService {
             throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
         }
 
-        // 지역코드 중복 체크
-        if (regionRepository.existsByRegCode(request.regCode())) {
+        // 중기 육상 예보 지역코드 중복 체크
+        if (regionRepository.existsByLandRegCode(request.landRegCode())) {
+            log.warn("중기 육상 예보 지역코드 중복: {}", request.landRegCode());
+            throw new WeatherException(WeatherErrorCode.INVALID_REGION_CODE);
+        }
+
+        // 중기 기온 예보 지역코드 중복 체크
+        if (regionRepository.existsByTempRegCode(request.tempRegCode())) {
+            log.warn("중기 기온 예보 지역코드 중복: {}", request.tempRegCode());
             throw new WeatherException(WeatherErrorCode.INVALID_REGION_CODE);
         }
 

@@ -19,7 +19,8 @@ public class RegionResDTO {
             BigDecimal longitude,
             BigDecimal gridX,
             BigDecimal gridY,
-            String regCode,
+            String landRegCode,
+            String tempRegCode,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
@@ -36,7 +37,8 @@ public class RegionResDTO {
             BigDecimal longitude,
             BigDecimal gridX,
             BigDecimal gridY,
-            String regCode,
+            String landRegCode,
+            String tempRegCode,
             String message
     ) {
     }
@@ -93,7 +95,8 @@ public class RegionResDTO {
     public record RegionSimple(
             Long regionId,
             String name,
-            String regCode
+            String landRegCode,
+            String tempRegCode
     ) {
     }
 }

@@ -24,7 +24,8 @@ public class RegionConverter {
                 .longitude(request.longitude())
                 .gridX(gridX)
                 .gridY(gridY)
-                .regCode(request.regCode())
+                .landRegCode(request.landRegCode())
+                .tempRegCode(request.tempRegCode())
                 .build();
     }
 
@@ -39,7 +40,8 @@ public class RegionConverter {
                 .longitude(region.getLongitude())
                 .gridX(region.getGridX())
                 .gridY(region.getGridY())
-                .regCode(region.getRegCode())
+                .landRegCode(region.getLandRegCode())
+                .tempRegCode(region.getTempRegCode())
                 .createdAt(region.getCreatedAt())
                 .updatedAt(region.getUpdatedAt())
                 .build();
@@ -56,7 +58,8 @@ public class RegionConverter {
                 .longitude(region.getLongitude())
                 .gridX(region.getGridX())
                 .gridY(region.getGridY())
-                .regCode(region.getRegCode())
+                .landRegCode(region.getLandRegCode())
+                .tempRegCode(region.getTempRegCode())
                 .message("지역이 성공적으로 등록되었습니다.")
                 .build();
     }
@@ -112,7 +115,8 @@ public class RegionConverter {
         return RegionResDTO.RegionSimple.builder()
                 .regionId(region.getId())
                 .name(region.getName())
-                .regCode(region.getRegCode())
+                .landRegCode(region.getLandRegCode())
+                .tempRegCode(region.getTempRegCode())
                 .build();
     }
 

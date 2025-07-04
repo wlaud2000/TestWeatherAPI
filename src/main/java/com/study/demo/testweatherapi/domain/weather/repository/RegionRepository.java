@@ -17,9 +17,14 @@ public interface RegionRepository extends JpaRepository<Region, Long> {
     Optional<Region> findByName(String name);
 
     /**
-     * 지역코드로 조회 (중기예보 API용)
+     * 중기 육상 예보 지역코드로 조회
      */
-    Optional<Region> findByRegCode(String regCode);
+    Optional<Region> findByLandRegCode(String landRegCode);
+
+    /**
+     * 중기 기온 예보 지역코드로 조회
+     */
+    Optional<Region> findByTempRegCode(String tempRegCode);
 
     /**
      * 지역명 중복 체크
@@ -27,9 +32,14 @@ public interface RegionRepository extends JpaRepository<Region, Long> {
     boolean existsByName(String name);
 
     /**
-     * 지역코드 중복 체크
+     * 중기 육상 예보 지역코드 중복 체크
      */
-    boolean existsByRegCode(String regCode);
+    boolean existsByLandRegCode(String landRegCode);
+
+    /**
+     * 중기 기온 예보 지역코드 중복 체크
+     */
+    boolean existsByTempRegCode(String tempRegCode);
 
     /**
      * 격자 좌표로 조회 (단기예보 API용)
@@ -56,4 +66,16 @@ public interface RegionRepository extends JpaRepository<Region, Long> {
      */
     @Query("SELECT r FROM Region r WHERE r.name LIKE %:keyword% ORDER BY r.name ASC")
     List<Region> searchByNameContaining(@Param("keyword") String keyword);
+
+    /**
+     * 중기 육상 예보용 모든 지역 조회
+     */
+    @Query("SELECT r FROM Region r WHERE r.landRegCode IS NOT NULL ORDER BY r.name ASC")
+    List<Region> findAllForLandForecast();
+
+    /**
+     * 중기 기온 예보용 모든 지역 조회
+     */
+    @Query("SELECT r FROM Region r WHERE r.tempRegCode IS NOT NULL ORDER BY r.name ASC")
+    List<Region> findAllForTempForecast();
 }

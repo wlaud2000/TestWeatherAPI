@@ -20,8 +20,11 @@ public class RegionReqDTO {
             @NotNull(message = "경도는 필수 입력값입니다.")
             BigDecimal longitude,
 
-            @NotBlank(message = "지역코드는 필수 입력값입니다.")
-            String regCode
+            @NotBlank(message = "중기 육상 예보 지역코드는 필수 입력값입니다.")
+            String landRegCode,
+
+            @NotBlank(message = "중기 기온 예보 지역코드는 필수 입력값입니다.")
+            String tempRegCode
     ) {
     }
 
@@ -38,8 +41,11 @@ public class RegionReqDTO {
             @NotNull(message = "경도는 필수 입력값입니다.")
             BigDecimal longitude,
 
-            @NotBlank(message = "지역코드는 필수 입력값입니다.")
-            String regCode
+            @NotBlank(message = "중기 육상 예보 지역코드는 필수 입력값입니다.")
+            String landRegCode,
+
+            @NotBlank(message = "중기 기온 예보 지역코드는 필수 입력값입니다.")
+            String tempRegCode
     ) {
     }
 
