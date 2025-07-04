@@ -9,7 +9,7 @@ import java.util.List;
 public class RegionResDTO {
 
     /**
-     * 지역 정보 응답
+     * 지역 정보 응답 DTO
      */
     @Builder
     public record RegionInfo(
@@ -26,7 +26,23 @@ public class RegionResDTO {
     }
 
     /**
-     * 지역 목록 응답
+     * 지역 생성 응답 DTO
+     */
+    @Builder
+    public record CreateRegionResponse(
+            Long regionId,
+            String name,
+            BigDecimal latitude,
+            BigDecimal longitude,
+            BigDecimal gridX,
+            BigDecimal gridY,
+            String regCode,
+            String message
+    ) {
+    }
+
+    /**
+     * 지역 목록 응답 DTO
      */
     @Builder
     public record RegionList(
@@ -36,10 +52,34 @@ public class RegionResDTO {
     }
 
     /**
-     * 지역 등록 성공 응답
+     * 좌표 변환 결과 응답 DTO
      */
     @Builder
-    public record RegionCreated(
+    public record CoordinateConversion(
+            BigDecimal inputLatitude,
+            BigDecimal inputLongitude,
+            BigDecimal gridX,
+            BigDecimal gridY,
+            String message
+    ) {
+    }
+
+    /**
+     * 지역 검색 결과 DTO
+     */
+    @Builder
+    public record RegionSearchResult(
+            List<RegionInfo> regions,
+            String keyword,
+            int resultCount
+    ) {
+    }
+
+    /**
+     * 지역 삭제 응답 DTO
+     */
+    @Builder
+    public record DeleteRegionResponse(
             Long regionId,
             String name,
             String message
@@ -47,13 +87,13 @@ public class RegionResDTO {
     }
 
     /**
-     * 지역 삭제 성공 응답
+     * 간단한 지역 정보 (선택 목록용)
      */
     @Builder
-    public record RegionDeleted(
+    public record RegionSimple(
             Long regionId,
             String name,
-            String message
+            String regCode
     ) {
     }
 }
