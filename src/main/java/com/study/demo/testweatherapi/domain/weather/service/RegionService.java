@@ -216,18 +216,6 @@ public class RegionService {
             throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
         }
 
-        // 중기 육상 예보 지역코드 중복 체크
-        if (regionRepository.existsByLandRegCode(request.landRegCode())) {
-            log.warn("중기 육상 예보 지역코드 중복: {}", request.landRegCode());
-            throw new WeatherException(WeatherErrorCode.INVALID_REGION_CODE);
-        }
-
-        // 중기 기온 예보 지역코드 중복 체크
-        if (regionRepository.existsByTempRegCode(request.tempRegCode())) {
-            log.warn("중기 기온 예보 지역코드 중복: {}", request.tempRegCode());
-            throw new WeatherException(WeatherErrorCode.INVALID_REGION_CODE);
-        }
-
         // 유사한 좌표 체크 (매우 가까운 거리의 지역이 이미 있는지 확인)
         List<Region> nearRegions = regionRepository.findByNearCoordinates(
                 request.latitude(), request.longitude());

@@ -35,10 +35,10 @@ public class Region extends BaseEntity {
     @Column(name = "grid_y", nullable = false, precision = 5, scale = 2)
     private BigDecimal gridY;
 
-    @Column(name = "land_reg_code", nullable = false)
+    @Column(name = "land_reg_code")
     private String landRegCode;    // 중기 육상 예보용 지역 코드
 
-    @Column(name = "temp_reg_code", nullable = false)
+    @Column(name = "temp_reg_code")
     private String tempRegCode;    // 중기 기온 예보용 지역 코드
 
     @OneToMany(mappedBy = "region", cascade = CascadeType.ALL, orphanRemoval = true)
