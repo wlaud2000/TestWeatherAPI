@@ -25,14 +25,16 @@ public class WeatherResDTO {
     ) {
     }
 
+
     /**
-     * 지역 정보
+     * 지역 정보 (날씨 관련 응답용)
      */
     @Builder
     public record RegionInfo(
             Long regionId,
             String regionName,
-            String regCode
+            String landRegCode,
+            String tempRegCode
     ) {
     }
 

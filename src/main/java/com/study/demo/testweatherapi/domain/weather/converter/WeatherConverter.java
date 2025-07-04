@@ -42,7 +42,8 @@ public class WeatherConverter {
         return WeatherResDTO.RegionInfo.builder()
                 .regionId(region.getId())
                 .regionName(region.getName())
-                .regCode(region.getRegCode())
+                .landRegCode(region.getLandRegCode())
+                .tempRegCode(region.getTempRegCode())
                 .build();
     }
 
@@ -102,11 +103,20 @@ public class WeatherConverter {
                         })
                         .collect(Collectors.toList());
 
-        WeatherResDTO.RegionInfo regionInfo = WeatherResDTO.RegionInfo.builder()
-                .regionId(regionId)
-                .regionName(regionName)
-                .regCode(null) // 필요시 추가
-                .build();
+        // 첫 번째 추천 데이터에서 지역 정보 가져오기 (있는 경우)
+        WeatherResDTO.RegionInfo regionInfo;
+        if (!recommendations.isEmpty()) {
+            Region region = recommendations.get(0).getRegion();
+            regionInfo = toRegionInfo(region);
+        } else {
+            // 추천 데이터가 없는 경우 기본 정보만
+            regionInfo = WeatherResDTO.RegionInfo.builder()
+                    .regionId(regionId)
+                    .regionName(regionName)
+                    .landRegCode(null)
+                    .tempRegCode(null)
+                    .build();
+        }
 
         return WeatherResDTO.WeeklyRecommendation.builder()
                 .region(regionInfo)
