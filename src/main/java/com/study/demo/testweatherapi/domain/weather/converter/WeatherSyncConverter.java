@@ -90,12 +90,13 @@ public class WeatherSyncConverter {
                 if (landData != null && tempData != null) {
                     RawMediumTermWeather weather = RawMediumTermWeather.builder()
                             .region(region)
-                            .tmfc(LocalDate.parse(landData.tmfc, DateTimeFormatter.ofPattern("yyyyMMddHHmm")).toLocalDate())
-                            .tmef(LocalDate.parse(landData.tmef, DateTimeFormatter.ofPattern("yyyyMMddHHmm")).toLocalDate())
-                            .sky(convertMediumTermSkyValue(landData.sky))
-                            .pop(Double.parseDouble(landData.rnSt))
-                            .minTmp(Double.parseDouble(tempData.min))
-                            .maxTmp(Double.parseDouble(tempData.max))
+                            // 수정: LocalDate.parse()는 이미 LocalDate를 반환하므로 .toLocalDate() 제거
+                            .tmfc(LocalDate.parse(landData.tmfc().substring(0, 8), DateTimeFormatter.ofPattern("yyyyMMdd")))
+                            .tmef(LocalDate.parse(landData.tmef().substring(0, 8), DateTimeFormatter.ofPattern("yyyyMMdd")))
+                            .sky(convertMediumTermSkyValue(landData.sky()))
+                            .pop(Double.parseDouble(landData.rnSt()))
+                            .minTmp(Double.parseDouble(tempData.min()))
+                            .maxTmp(Double.parseDouble(tempData.max()))
                             .build();
 
                     results.add(weather);

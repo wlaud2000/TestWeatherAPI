@@ -240,7 +240,7 @@ public class WeatherDataCollectionService {
                     .uri(uriBuilder -> uriBuilder
                             .path(mediumTermLandUrl)
                             .queryParam("authKey", apiKey)
-                            .queryParam("reg", region.getRegCode())
+                            .queryParam("reg", region.getLandRegCode())  // 변경: landRegCode 사용
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)
@@ -253,7 +253,8 @@ public class WeatherDataCollectionService {
             return response;
 
         } catch (Exception e) {
-            log.error("중기 육상 예보 API 호출 실패: regionId={}, regCode={}", region.getId(), region.getRegCode(), e);
+            log.error("중기 육상 예보 API 호출 실패: regionId={}, landRegCode={}",
+                    region.getId(), region.getLandRegCode(), e);
             throw new WeatherException(WeatherErrorCode.MEDIUM_TERM_FORECAST_ERROR);
         }
     }
@@ -267,7 +268,7 @@ public class WeatherDataCollectionService {
                     .uri(uriBuilder -> uriBuilder
                             .path(mediumTermTempUrl)
                             .queryParam("authKey", apiKey)
-                            .queryParam("reg", region.getRegCode())
+                            .queryParam("reg", region.getTempRegCode())  // 변경: tempRegCode 사용
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)
@@ -280,7 +281,8 @@ public class WeatherDataCollectionService {
             return response;
 
         } catch (Exception e) {
-            log.error("중기 기온 예보 API 호출 실패: regionId={}, regCode={}", region.getId(), region.getRegCode(), e);
+            log.error("중기 기온 예보 API 호출 실패: regionId={}, tempRegCode={}",
+                    region.getId(), region.getTempRegCode(), e);
             throw new WeatherException(WeatherErrorCode.MEDIUM_TERM_FORECAST_ERROR);
         }
     }
