@@ -28,7 +28,8 @@ public class WeatherScheduler {
     // 스케줄러 실행 상태 추적
     private volatile boolean shortTermSyncRunning = false;
     private volatile boolean mediumTermSyncRunning = false;
-    private volatile boolean recommendationGenerationRunning = false;
+    private volatile boolean shortTermRecommendationRunning = false;
+    private volatile boolean mediumTermRecommendationRunning = false;
     private volatile boolean cleanupRunning = false;
 
     /**
@@ -61,9 +62,9 @@ public class WeatherScheduler {
                     result.successfulRegions(), result.totalRegions(),
                     result.newDataPoints(), result.updatedDataPoints());
 
-            // 동기화 성공 후 추천 정보 생성 트리거
+            // 동기화 성공 후 단기예보 추천 정보 생성 트리거 (15분 후)
             if (result.successfulRegions() > 0) {
-                triggerRecommendationGeneration("단기예보 동기화 후");
+                triggerShortTermRecommendationGeneration("단기예보 동기화 후", 15);
             }
 
         } catch (Exception e) {
@@ -99,9 +100,9 @@ public class WeatherScheduler {
                     result.successfulRegions(), result.totalRegions(),
                     result.newDataPoints(), result.updatedDataPoints());
 
-            // 동기화 성공 후 추천 정보 생성 트리거
+            // 동기화 성공 후 중기예보 추천 정보 생성 트리거 (30분 후)
             if (result.successfulRegions() > 0) {
-                triggerRecommendationGeneration("중기예보 동기화 후");
+                triggerMediumTermRecommendationGeneration("중기예보 동기화 후", 30);
             }
 
         } catch (Exception e) {
@@ -112,37 +113,72 @@ public class WeatherScheduler {
     }
 
     /**
-     * 추천 정보 생성 스케줄러
-     * 매 시간 15분에 실행 (날씨 데이터 업데이트 후 추천 정보 갱신)
+     * 단기예보 추천 정보 생성 스케줄러 (0-2일)
+     * 매 시간 5분에 실행 - 단기예보는 1시간마다 업데이트
      */
-    @Scheduled(cron = "0 15 * * * *")
+    @Scheduled(cron = "${scheduler.weather.recommendation.short-term-cron}")
     @Async("weatherTaskExecutor")
-    public void scheduledRecommendationGeneration() {
-        if (recommendationGenerationRunning) {
-            log.warn("추천 정보 생성이 이미 실행 중입니다. 스킵합니다.");
+    public void scheduledShortTermRecommendationGeneration() {
+        if (shortTermRecommendationRunning) {
+            log.warn("단기예보 추천 생성이 이미 실행 중입니다. 스킵합니다.");
             return;
         }
 
         try {
-            recommendationGenerationRunning = true;
-            log.info("추천 정보 생성 스케줄러 시작");
+            shortTermRecommendationRunning = true;
+            log.info("단기예보 추천 생성 스케줄러 시작 (0-2일)");
 
-            // 오늘부터 7일간의 추천 정보 생성
+            // 오늘부터 3일간만 처리 (0, 1, 2일)
             LocalDate startDate = LocalDate.now();
-            LocalDate endDate = startDate.plusDays(6);
+            LocalDate endDate = startDate.plusDays(2);
 
             WeatherSyncResDTO.RecommendationGenerationResult result =
                     recommendationGenerationService.generateRecommendations(
-                            null, startDate, endDate, false);
+                            null, startDate, endDate, true, "단기예보");  // 강제 재생성으로 최신 데이터 반영
 
-            log.info("추천 정보 생성 스케줄러 완료: 성공 {}/{} 지역, 신규 {} 건, 업데이트 {} 건",
+            log.info("단기예보 추천 생성 스케줄러 완료: 성공 {}/{} 지역, 신규 {} 건, 업데이트 {} 건",
                     result.successfulRegions(), result.totalRegions(),
                     result.newRecommendations(), result.updatedRecommendations());
 
         } catch (Exception e) {
-            log.error("추천 정보 생성 스케줄러 실행 중 오류 발생", e);
+            log.error("단기예보 추천 생성 스케줄러 실행 중 오류 발생", e);
         } finally {
-            recommendationGenerationRunning = false;
+            shortTermRecommendationRunning = false;
+        }
+    }
+
+    /**
+     * 중기예보 추천 정보 생성 스케줄러 (3-6일)
+     * 매 6시간 30분에 실행 - 중기예보는 12시간마다 업데이트되므로 6시간마다 충분
+     */
+    @Scheduled(cron = "${scheduler.weather.recommendation.medium-term-cron}")
+    @Async("weatherTaskExecutor")
+    public void scheduledMediumTermRecommendationGeneration() {
+        if (mediumTermRecommendationRunning) {
+            log.warn("중기예보 추천 생성이 이미 실행 중입니다. 스킵합니다.");
+            return;
+        }
+
+        try {
+            mediumTermRecommendationRunning = true;
+            log.info("중기예보 추천 생성 스케줄러 시작 (3-6일)");
+
+            // 3일후부터 4일간만 처리 (3, 4, 5, 6일)
+            LocalDate startDate = LocalDate.now().plusDays(3);
+            LocalDate endDate = LocalDate.now().plusDays(6);
+
+            WeatherSyncResDTO.RecommendationGenerationResult result =
+                    recommendationGenerationService.generateRecommendations(
+                            null, startDate, endDate, true, "중기예보");  // 강제 재생성
+
+            log.info("중기예보 추천 생성 스케줄러 완료: 성공 {}/{} 지역, 신규 {} 건, 업데이트 {} 건",
+                    result.successfulRegions(), result.totalRegions(),
+                    result.newRecommendations(), result.updatedRecommendations());
+
+        } catch (Exception e) {
+            log.error("중기예보 추천 생성 스케줄러 실행 중 오류 발생", e);
+        } finally {
+            mediumTermRecommendationRunning = false;
         }
     }
 
@@ -197,22 +233,25 @@ public class WeatherScheduler {
 
         try {
             // 각 스케줄러 실행 상태 로깅
-            log.debug("스케줄러 실행 상태 - 단기예보: {}, 중기예보: {}, 추천생성: {}, 정리작업: {}",
-                    shortTermSyncRunning, mediumTermSyncRunning, recommendationGenerationRunning, cleanupRunning);
+            log.debug("스케줄러 실행 상태 - 단기예보수집: {}, 중기예보수집: {}, 단기추천: {}, 중기추천: {}, 정리작업: {}",
+                    shortTermSyncRunning, mediumTermSyncRunning,
+                    shortTermRecommendationRunning, mediumTermRecommendationRunning, cleanupRunning);
 
             // 장시간 실행 중인 작업 경고
-            LocalDateTime now = LocalDateTime.now();
             if (shortTermSyncRunning) {
                 log.warn("단기 예보 동기화가 장시간 실행 중입니다. 확인이 필요합니다.");
             }
             if (mediumTermSyncRunning) {
                 log.warn("중기 예보 동기화가 장시간 실행 중입니다. 확인이 필요합니다.");
             }
-            if (recommendationGenerationRunning) {
-                log.warn("추천 정보 생성이 장시간 실행 중입니다. 확인이 필요합니다.");
+            if (shortTermRecommendationRunning) {
+                log.warn("단기예보 추천 생성이 장시간 실행 중입니다. 확인이 필요합니다.");
+            }
+            if (mediumTermRecommendationRunning) {
+                log.warn("중기예보 추천 생성이 장시간 실행 중입니다. 확인이 필요합니다.");
             }
 
-            // 메모리 사용량 체크 (선택적)
+            // 메모리 사용량 체크
             Runtime runtime = Runtime.getRuntime();
             long usedMemory = runtime.totalMemory() - runtime.freeMemory();
             long maxMemory = runtime.maxMemory();
@@ -264,9 +303,11 @@ public class WeatherScheduler {
             // 두 동기화 작업 완료 후 추천 정보 생성
             CompletableFuture.allOf(shortTermFuture, mediumTermFuture).thenRun(() -> {
                 try {
+                    // 전체 기간 추천 정보 생성
                     LocalDate startDate = LocalDate.now();
                     LocalDate endDate = startDate.plusDays(6);
-                    recommendationGenerationService.generateRecommendations(null, startDate, endDate, false);
+                    recommendationGenerationService.generateRecommendations(
+                            null, startDate, endDate, false, "초기동기화");
                     log.info("초기 추천 정보 생성 완료");
                 } catch (Exception e) {
                     log.error("초기 추천 정보 생성 실패", e);
@@ -283,21 +324,45 @@ public class WeatherScheduler {
     // ==== 내부 유틸리티 메서드들 ====
 
     /**
-     * 추천 정보 생성 트리거 (비동기)
+     * 단기예보 추천 정보 생성 트리거 (비동기, 지연 실행)
      */
-    private void triggerRecommendationGeneration(String trigger) {
+    private void triggerShortTermRecommendationGeneration(String trigger, int delayMinutes) {
         CompletableFuture.runAsync(() -> {
             try {
-                log.debug("추천 정보 생성 트리거: {}", trigger);
+                Thread.sleep(delayMinutes * 60 * 1000); // 지연 시간
+                log.debug("단기예보 추천 정보 생성 트리거: {}", trigger);
 
                 LocalDate startDate = LocalDate.now();
-                LocalDate endDate = startDate.plusDays(6);
+                LocalDate endDate = startDate.plusDays(2);
 
-                recommendationGenerationService.generateRecommendations(null, startDate, endDate, false);
-                log.debug("추천 정보 생성 트리거 완료: {}", trigger);
+                recommendationGenerationService.generateRecommendations(
+                        null, startDate, endDate, true, "트리거-" + trigger);
+                log.debug("단기예보 추천 정보 생성 트리거 완료: {}", trigger);
 
             } catch (Exception e) {
-                log.error("추천 정보 생성 트리거 실패: {}", trigger, e);
+                log.error("단기예보 추천 정보 생성 트리거 실패: {}", trigger, e);
+            }
+        });
+    }
+
+    /**
+     * 중기예보 추천 정보 생성 트리거 (비동기, 지연 실행)
+     */
+    private void triggerMediumTermRecommendationGeneration(String trigger, int delayMinutes) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                Thread.sleep(delayMinutes * 60 * 1000); // 지연 시간
+                log.debug("중기예보 추천 정보 생성 트리거: {}", trigger);
+
+                LocalDate startDate = LocalDate.now().plusDays(3);
+                LocalDate endDate = LocalDate.now().plusDays(6);
+
+                recommendationGenerationService.generateRecommendations(
+                        null, startDate, endDate, true, "트리거-" + trigger);
+                log.debug("중기예보 추천 정보 생성 트리거 완료: {}", trigger);
+
+            } catch (Exception e) {
+                log.error("중기예보 추천 정보 생성 트리거 실패: {}", trigger, e);
             }
         });
     }
@@ -326,7 +391,8 @@ public class WeatherScheduler {
         return new SchedulerStatus(
                 shortTermSyncRunning,
                 mediumTermSyncRunning,
-                recommendationGenerationRunning,
+                shortTermRecommendationRunning,
+                mediumTermRecommendationRunning,
                 cleanupRunning,
                 LocalDateTime.now()
         );
@@ -338,7 +404,8 @@ public class WeatherScheduler {
     public record SchedulerStatus(
             boolean shortTermSyncRunning,
             boolean mediumTermSyncRunning,
-            boolean recommendationGenerationRunning,
+            boolean shortTermRecommendationRunning,
+            boolean mediumTermRecommendationRunning,
             boolean cleanupRunning,
             LocalDateTime statusTime
     ) {}

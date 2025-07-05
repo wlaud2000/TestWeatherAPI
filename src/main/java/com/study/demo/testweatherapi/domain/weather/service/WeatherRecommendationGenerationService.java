@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -36,10 +37,21 @@ public class WeatherRecommendationGenerationService {
     @Transactional
     public WeatherSyncResDTO.RecommendationGenerationResult generateRecommendations(
             List<Long> regionIds, LocalDate startDate, LocalDate endDate, boolean forceRegenerate) {
+        // 기존 호환성을 위한 오버로드
+        return generateRecommendations(regionIds, startDate, endDate, forceRegenerate, "일반");
+    }
+
+    /**
+     * 날씨 추천 정보 생성 (타입별 처리 추가)
+     */
+    @Transactional
+    public WeatherSyncResDTO.RecommendationGenerationResult generateRecommendations(
+            List<Long> regionIds, LocalDate startDate, LocalDate endDate,
+            boolean forceRegenerate, String recommendationType) {
 
         LocalDateTime startTime = LocalDateTime.now();
-        log.info("추천 정보 생성 시작: regionIds={}, startDate={}, endDate={}, forceRegenerate={}",
-                regionIds, startDate, endDate, forceRegenerate);
+        log.info("{} 추천 정보 생성 시작: regionIds={}, startDate={}, endDate={}, forceRegenerate={}",
+                recommendationType, regionIds, startDate, endDate, forceRegenerate);
 
         List<Region> targetRegions = getTargetRegions(regionIds);
         List<WeatherSyncResDTO.RegionRecommendationResult> regionResults = new ArrayList<>();
@@ -52,15 +64,16 @@ public class WeatherRecommendationGenerationService {
         // 템플릿 데이터 미리 로드
         List<WeatherTemplate> allTemplates = weatherTemplateRepository.findAllWithKeywords();
         Map<String, WeatherTemplate> templateMap = createTemplateMap(allTemplates);
+        log.debug("{} 추천 생성: 템플릿 맵 생성 완료 ({}개)", recommendationType, templateMap.size());
 
         for (Region region : targetRegions) {
             long regionStartTime = System.currentTimeMillis();
 
             try {
-                log.debug("지역 {} 추천 정보 생성 시작", region.getName());
+                log.debug("{} 추천 생성: 지역 {} 처리 시작", recommendationType, region.getName());
 
                 RegionRecommendationResult regionResult = generateRecommendationsForRegion(
-                        region, startDate, endDate, forceRegenerate, templateMap);
+                        region, startDate, endDate, forceRegenerate, templateMap, recommendationType);
 
                 totalRecommendations += regionResult.recommendationsGenerated();
                 newRecommendations += regionResult.newRecommendations();
@@ -79,8 +92,9 @@ public class WeatherRecommendationGenerationService {
                         regionResult.processedDates(),
                         null, processingTime));
 
-                log.debug("지역 {} 추천 정보 생성 완료: 신규 {}, 업데이트 {}",
-                        region.getName(), regionResult.newRecommendations(), regionResult.updatedRecommendations());
+                log.debug("{} 추천 생성: 지역 {} 완료 - 신규 {}, 업데이트 {}, 처리시간 {}ms",
+                        recommendationType, region.getName(),
+                        regionResult.newRecommendations(), regionResult.updatedRecommendations(), processingTime);
 
             } catch (Exception e) {
                 failedRegions++;
@@ -92,13 +106,15 @@ public class WeatherRecommendationGenerationService {
                         region.getId(), region.getName(), false, 0, 0, 0,
                         Collections.emptyList(), errorMessage, processingTime));
 
-                log.error("지역 {} 추천 정보 생성 실패", region.getName(), e);
+                log.error("{} 추천 생성: 지역 {} 실패", recommendationType, region.getName(), e);
             }
         }
 
         LocalDateTime endTime = LocalDateTime.now();
-        log.info("추천 정보 생성 완료: 성공 {}/{} 지역, 신규 {}, 업데이트 {} 추천",
-                successfulRegions, targetRegions.size(), newRecommendations, updatedRecommendations);
+        log.info("{} 추천 정보 생성 완료: 성공 {}/{} 지역, 신규 {}, 업데이트 {} 추천, 처리시간 {}ms",
+                recommendationType, successfulRegions, targetRegions.size(),
+                newRecommendations, updatedRecommendations,
+                ChronoUnit.MILLIS.between(startTime, endTime));
 
         return WeatherSyncConverter.toRecommendationGenerationResult(
                 targetRegions.size(), successfulRegions, failedRegions,
@@ -111,7 +127,7 @@ public class WeatherRecommendationGenerationService {
      */
     private RegionRecommendationResult generateRecommendationsForRegion(
             Region region, LocalDate startDate, LocalDate endDate, boolean forceRegenerate,
-            Map<String, WeatherTemplate> templateMap) {
+            Map<String, WeatherTemplate> templateMap, String recommendationType) {
 
         int recommendationsGenerated = 0, newRecommendations = 0, updatedRecommendations = 0;
         List<String> processedDates = new ArrayList<>();
@@ -121,6 +137,17 @@ public class WeatherRecommendationGenerationService {
         LocalDate currentDate = startDate;
         while (!currentDate.isAfter(endDate)) {
             try {
+                long daysFromToday = ChronoUnit.DAYS.between(LocalDate.now(), currentDate);
+
+                // 타입별 로깅
+                if ("단기예보".equals(recommendationType) && daysFromToday <= 2) {
+                    log.debug("단기예보 기반 추천 생성: {} 지역 {} ({}일후)",
+                            region.getName(), currentDate, daysFromToday);
+                } else if ("중기예보".equals(recommendationType) && daysFromToday >= 3) {
+                    log.debug("중기예보 기반 추천 생성: {} 지역 {} ({}일후)",
+                            region.getName(), currentDate, daysFromToday);
+                }
+
                 RecommendationResult result = generateRecommendationForDate(
                         region, currentDate, forceRegenerate, templateMap);
 
@@ -134,14 +161,21 @@ public class WeatherRecommendationGenerationService {
 
                     processedDates.add(currentDate.toString());
                     weatherTypeStats.merge(result.weatherType(), 1, Integer::sum);
+
+                    log.trace("날짜 {} 추천 {}됨: {}", currentDate,
+                            result.isNew() ? "생성" : "업데이트", result.weatherType());
                 }
 
             } catch (Exception e) {
-                log.warn("날짜 {} 추천 생성 실패: {}", currentDate, e.getMessage());
+                log.warn("지역 {} 날짜 {} 추천 생성 실패: {}",
+                        region.getName(), currentDate, e.getMessage());
             }
 
             currentDate = currentDate.plusDays(1);
         }
+
+        log.debug("지역 {} 추천 생성 완료: 처리일수 {}, 생성 {}, 업데이트 {}",
+                region.getName(), processedDates.size(), newRecommendations, updatedRecommendations);
 
         return new RegionRecommendationResult(
                 recommendationsGenerated, newRecommendations, updatedRecommendations,
@@ -160,15 +194,17 @@ public class WeatherRecommendationGenerationService {
                 dailyRecommendationRepository.findByRegionIdAndDateWithTemplate(region.getId(), date);
 
         if (existingRecommendation.isPresent() && !forceRegenerate) {
-            log.debug("이미 존재하는 추천 정보 스킵: regionId={}, date={}", region.getId(), date);
+            log.trace("기존 추천 정보 존재하여 스킵: regionId={}, date={}", region.getId(), date);
             return null;
         }
 
         // 2. 날씨 데이터 분류
-        WeatherClassificationService.WeatherClassificationResult classification = classifyWeatherForDate(region, date);
+        WeatherClassificationService.WeatherClassificationResult classification =
+                classifyWeatherForDate(region, date);
 
         if (!classification.isValid()) {
-            log.warn("유효하지 않은 날씨 분류 결과: regionId={}, date={}", region.getId(), date);
+            log.warn("유효하지 않은 날씨 분류 결과: regionId={}, date={}, classification={}",
+                    region.getId(), date, classification.getSummary());
             return null;
         }
 
@@ -186,8 +222,9 @@ public class WeatherRecommendationGenerationService {
         DailyRecommendation recommendation = saveOrUpdateRecommendation(
                 existingRecommendation.orElse(null), region, date, matchedTemplate);
 
-        log.debug("추천 정보 {}됨: regionId={}, date={}, template={}",
-                isNew ? "생성" : "업데이트", region.getId(), date, matchedTemplate.getId());
+        log.trace("추천 정보 {}됨: regionId={}, date={}, template={}, weatherType={}",
+                isNew ? "생성" : "업데이트", region.getId(), date,
+                matchedTemplate.getId(), classification.weatherType());
 
         return new RecommendationResult(classification.weatherType(), isNew);
     }
@@ -196,9 +233,10 @@ public class WeatherRecommendationGenerationService {
      * 특정 날짜의 날씨 데이터 분류
      * 우선순위: 단기예보(0-2일) > 중기예보(3-6일)
      */
-    private WeatherClassificationService.WeatherClassificationResult classifyWeatherForDate(Region region, LocalDate date) {
+    private WeatherClassificationService.WeatherClassificationResult classifyWeatherForDate(
+            Region region, LocalDate date) {
         LocalDate today = LocalDate.now();
-        long daysFromToday = java.time.temporal.ChronoUnit.DAYS.between(today, date);
+        long daysFromToday = ChronoUnit.DAYS.between(today, date);
 
         if (daysFromToday <= 2) {
             // 단기 예보 데이터 사용 (0-2일)
@@ -206,6 +244,8 @@ public class WeatherRecommendationGenerationService {
                     shortTermWeatherRepository.findLatestByRegionIdAndFcstDate(region.getId(), date);
 
             if (!shortTermData.isEmpty()) {
+                log.trace("단기예보 데이터 사용: regionId={}, date={}, 데이터 수={}",
+                        region.getId(), date, shortTermData.size());
                 return classificationService.classifyShortTermWeather(shortTermData, region.getId(), date);
             }
         }
@@ -216,12 +256,15 @@ public class WeatherRecommendationGenerationService {
                     mediumTermWeatherRepository.findLatestByRegionIdAndTmef(region.getId(), date);
 
             if (!mediumTermData.isEmpty()) {
+                log.trace("중기예보 데이터 사용: regionId={}, date={}, 데이터 수={}",
+                        region.getId(), date, mediumTermData.size());
                 return classificationService.classifyMediumTermWeather(mediumTermData, region.getId(), date);
             }
         }
 
-        // 데이터가 없으면 기본 분류 결과 반환
-        log.warn("날씨 데이터가 없어서 기본 분류 사용: regionId={}, date={}", region.getId(), date);
+        // 데이터가 없으면 예외 처리
+        log.warn("날씨 데이터가 없어서 추천 생성 실패: regionId={}, date={}, daysFromToday={}",
+                region.getId(), date, daysFromToday);
         throw new WeatherException(WeatherErrorCode.WEATHER_DATA_NOT_FOUND);
     }
 
@@ -229,7 +272,8 @@ public class WeatherRecommendationGenerationService {
      * 분류 결과에 매칭되는 템플릿 찾기
      */
     private WeatherTemplate findMatchingTemplate(
-            WeatherClassificationService.WeatherClassificationResult classification, Map<String, WeatherTemplate> templateMap) {
+            WeatherClassificationService.WeatherClassificationResult classification,
+            Map<String, WeatherTemplate> templateMap) {
 
         String templateKey = createTemplateKey(
                 classification.weatherType(),
@@ -239,10 +283,13 @@ public class WeatherRecommendationGenerationService {
         WeatherTemplate template = templateMap.get(templateKey);
 
         if (template == null) {
-            log.warn("정확히 매칭되는 템플릿 없음: {}", templateKey);
-
+            log.debug("정확한 템플릿 매칭 실패, 대체 템플릿 탐색: {}", templateKey);
             // 대체 템플릿 찾기 (강수 카테고리를 낮춰서 시도)
             template = findAlternativeTemplate(classification, templateMap);
+        }
+
+        if (template != null) {
+            log.trace("템플릿 매칭 성공: {} -> templateId={}", templateKey, template.getId());
         }
 
         return template;
@@ -253,7 +300,8 @@ public class WeatherRecommendationGenerationService {
      * 강수 카테고리 우선순위: HEAVY > LIGHT > NONE
      */
     private WeatherTemplate findAlternativeTemplate(
-            WeatherClassificationService.WeatherClassificationResult classification, Map<String, WeatherTemplate> templateMap) {
+            WeatherClassificationService.WeatherClassificationResult classification,
+            Map<String, WeatherTemplate> templateMap) {
 
         // 강수 카테고리를 단계적으로 낮춰가며 시도
         var precipCategories = List.of(
@@ -270,12 +318,14 @@ public class WeatherRecommendationGenerationService {
 
             WeatherTemplate template = templateMap.get(alternativeKey);
             if (template != null) {
-                log.debug("대체 템플릿 찾음: {} -> {}",
-                        classification.precipCategory(), precipCategory);
+                log.debug("대체 템플릿 찾음: {} -> {}, templateId={}",
+                        classification.precipCategory(), precipCategory, template.getId());
                 return template;
             }
         }
 
+        log.warn("대체 템플릿도 찾을 수 없음: weather={}, temp={}, precip={}",
+                classification.weatherType(), classification.tempCategory(), classification.precipCategory());
         return null;
     }
 
@@ -288,6 +338,7 @@ public class WeatherRecommendationGenerationService {
         if (existing != null) {
             // 기존 데이터 업데이트 (실제로는 immutable이므로 새로 생성)
             dailyRecommendationRepository.delete(existing);
+            log.trace("기존 추천 정보 삭제: id={}", existing.getId());
         }
 
         DailyRecommendation newRecommendation = DailyRecommendation.builder()
@@ -297,7 +348,10 @@ public class WeatherRecommendationGenerationService {
                 .updatedAt(LocalDateTime.now())
                 .build();
 
-        return dailyRecommendationRepository.save(newRecommendation);
+        DailyRecommendation saved = dailyRecommendationRepository.save(newRecommendation);
+        log.trace("새 추천 정보 저장: id={}, templateId={}", saved.getId(), template.getId());
+
+        return saved;
     }
 
     // ==== 유틸리티 메서드들 ====
@@ -307,9 +361,13 @@ public class WeatherRecommendationGenerationService {
      */
     private List<Region> getTargetRegions(List<Long> regionIds) {
         if (regionIds == null || regionIds.isEmpty()) {
-            return regionRepository.findAllActiveRegions();
+            List<Region> allRegions = regionRepository.findAllActiveRegions();
+            log.debug("전체 지역 조회: {}개", allRegions.size());
+            return allRegions;
         } else {
-            return regionRepository.findAllById(regionIds);
+            List<Region> specificRegions = regionRepository.findAllById(regionIds);
+            log.debug("특정 지역 조회: 요청 {}개, 조회 {}개", regionIds.size(), specificRegions.size());
+            return specificRegions;
         }
     }
 
@@ -317,15 +375,21 @@ public class WeatherRecommendationGenerationService {
      * 템플릿 맵 생성 (빠른 조회를 위한 인덱스)
      */
     private Map<String, WeatherTemplate> createTemplateMap(List<WeatherTemplate> templates) {
-        return templates.stream()
+        Map<String, WeatherTemplate> templateMap = templates.stream()
                 .collect(Collectors.toMap(
                         template -> createTemplateKey(
                                 template.getWeather(),
                                 template.getTempCategory(),
                                 template.getPrecipCategory()),
                         template -> template,
-                        (existing, replacement) -> existing  // 중복 키 시 기존 값 유지
+                        (existing, replacement) -> {
+                            log.debug("중복 템플릿 키 발견, 기존 값 유지: {}", existing.getId());
+                            return existing;
+                        }
                 ));
+
+        log.debug("템플릿 맵 생성 완료: 총 {}개 템플릿", templateMap.size());
+        return templateMap;
     }
 
     /**

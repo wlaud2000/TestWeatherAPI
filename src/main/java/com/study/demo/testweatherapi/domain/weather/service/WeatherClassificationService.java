@@ -5,17 +5,21 @@ import com.study.demo.testweatherapi.domain.weather.entity.RawShortTermWeather;
 import com.study.demo.testweatherapi.domain.weather.entity.enums.PrecipCategory;
 import com.study.demo.testweatherapi.domain.weather.entity.enums.TempCategory;
 import com.study.demo.testweatherapi.domain.weather.entity.enums.WeatherType;
+import com.study.demo.testweatherapi.global.config.WeatherClassificationConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class WeatherClassificationService {
+
+    private final WeatherClassificationConfig config;
 
     /**
      * 단기 예보 데이터를 분류
@@ -38,8 +42,9 @@ public class WeatherClassificationService {
             TempCategory tempCategory = classifyTempCategory(representativeData.getTmp());
             PrecipCategory precipCategory = classifyPrecipCategory(representativeData.getPop(), representativeData.getPcp());
 
-            log.debug("단기 예보 분류 완료: regionId={}, date={}, weather={}, temp={}, precip={}",
-                    regionId, targetDate, weatherType, tempCategory, precipCategory);
+            log.debug("단기 예보 분류 완료: regionId={}, date={}, weather={}, temp={}, precip={}, 기온={}°C, 강수확률={}%",
+                    regionId, targetDate, weatherType, tempCategory, precipCategory,
+                    representativeData.getTmp(), representativeData.getPop());
 
             return new WeatherClassificationResult(weatherType, tempCategory, precipCategory,
                     representativeData.getTmp(), representativeData.getPop(),
@@ -71,8 +76,9 @@ public class WeatherClassificationService {
             TempCategory tempCategory = classifyTempCategoryFromRange(representativeData.getMinTmp(), representativeData.getMaxTmp());
             PrecipCategory precipCategory = classifyPrecipCategory(representativeData.getPop(), 0.0); // 중기예보는 강수량 없음
 
-            log.debug("중기 예보 분류 완료: regionId={}, date={}, weather={}, temp={}, precip={}",
-                    regionId, targetDate, weatherType, tempCategory, precipCategory);
+            log.debug("중기 예보 분류 완료: regionId={}, date={}, weather={}, temp={}, precip={}, 최저={}°C, 최고={}°C, 강수확률={}%",
+                    regionId, targetDate, weatherType, tempCategory, precipCategory,
+                    representativeData.getMinTmp(), representativeData.getMaxTmp(), representativeData.getPop());
 
             double avgTemp = (representativeData.getMinTmp() + representativeData.getMaxTmp()) / 2.0;
             return new WeatherClassificationResult(weatherType, tempCategory, precipCategory,
@@ -176,32 +182,35 @@ public class WeatherClassificationService {
     }
 
     /**
-     * 기온 카테고리 분류 (단일 온도 기준)
-     * 10도 미만: 쌀쌀함, 11-20도: 선선함, 21-27도: 적당함, 28도 이상: 무더움
+     * 기온 카테고리 분류 (단일 온도 기준) - 설정 기반
      */
     private TempCategory classifyTempCategory(Double temperature) {
         if (temperature == null) return TempCategory.MILD;
 
-        if (temperature < 10) {
-            return TempCategory.CHILLY;
-        } else if (temperature <= 20) {
-            return TempCategory.COOL;
-        } else if (temperature <= 27) {
-            return TempCategory.MILD;
+        WeatherClassificationConfig.TemperatureThresholds thresholds = config.getTemperature();
+
+        if (temperature < thresholds.getChillyCoolBoundary()) {
+            return TempCategory.CHILLY;     // 쌀쌀함
+        } else if (temperature <= thresholds.getCoolMildBoundary()) {
+            return TempCategory.COOL;       // 선선함
+        } else if (temperature <= thresholds.getMildHotBoundary()) {
+            return TempCategory.MILD;       // 적당함
         } else {
-            return TempCategory.HOT;
+            return TempCategory.HOT;        // 무더움
         }
     }
 
     /**
-     * 기온 카테고리 분류 (최저-최고 온도 범위 기준)
-     * 평균 온도로 판단하되, 최고 온도가 28도 이상이면 무더움으로 분류
+     * 기온 카테고리 분류 (최저-최고 온도 범위 기준) - 설정 기반
+     * 평균 온도로 판단하되, 최고 온도가 무더움 기준 이상이면 무더움으로 분류
      */
     private TempCategory classifyTempCategoryFromRange(Double minTemp, Double maxTemp) {
         if (minTemp == null || maxTemp == null) return TempCategory.MILD;
 
-        // 최고 온도가 28도 이상이면 무더움
-        if (maxTemp >= 28) {
+        WeatherClassificationConfig.TemperatureThresholds thresholds = config.getTemperature();
+
+        // 최고 온도가 무더움 기준 이상이면 무더움
+        if (maxTemp > thresholds.getMildHotBoundary()) {
             return TempCategory.HOT;
         }
 
@@ -211,25 +220,26 @@ public class WeatherClassificationService {
     }
 
     /**
-     * 강수 카테고리 분류
-     * 강수확률: 0-30% 낮음, 30-70% 있음, 70% 이상 높음
-     * 단, 실제 강수량이 있으면 강수확률과 관계없이 조정
+     * 강수 카테고리 분류 - 설정 기반
+     * 강수확률과 실제 강수량을 모두 고려
      */
     private PrecipCategory classifyPrecipCategory(Double precipProbability, Double precipAmount) {
         if (precipProbability == null) precipProbability = 0.0;
         if (precipAmount == null) precipAmount = 0.0;
 
-        // 실제 강수량이 많으면 강제로 높음 처리
-        if (precipAmount >= 10.0) {
+        WeatherClassificationConfig.PrecipitationThresholds thresholds = config.getPrecipitation();
+
+        // 실제 강수량이 많으면 강수확률과 관계없이 우선 처리
+        if (precipAmount >= thresholds.getHeavyAmountThreshold()) {
             return PrecipCategory.HEAVY;
-        } else if (precipAmount >= 1.0) {
+        } else if (precipAmount >= thresholds.getLightAmountThreshold()) {
             return PrecipCategory.LIGHT;
         }
 
         // 강수확률 기준 분류
-        if (precipProbability >= 70) {
+        if (precipProbability >= thresholds.getLightHeavyProbability()) {
             return PrecipCategory.HEAVY;
-        } else if (precipProbability >= 30) {
+        } else if (precipProbability >= thresholds.getNoneLightProbability()) {
             return PrecipCategory.LIGHT;
         } else {
             return PrecipCategory.NONE;
@@ -268,8 +278,20 @@ public class WeatherClassificationService {
          * 분류 결과 요약 문자열
          */
         public String getSummary() {
-            return String.format("%s, %s, %s (%.1f°C, %.0f%%)",
-                    weatherType, tempCategory, precipCategory, temperature, precipProbability);
+            return String.format("%s, %s, %s (%.1f°C, %.0f%%, %.1fmm) [%s]",
+                    weatherType, tempCategory, precipCategory,
+                    temperature, precipProbability, precipAmount, dataSource);
+        }
+
+        /**
+         * 설정 기반 분류 기준 정보 포함 요약
+         */
+        public String getDetailedSummary(WeatherClassificationConfig config) {
+            return String.format(
+                    "분류결과: %s | 온도: %.1f°C (%s) | 강수: %.0f%% + %.1fmm (%s) | 출처: %s",
+                    weatherType, temperature, tempCategory,
+                    precipProbability, precipAmount, precipCategory, dataSource
+            );
         }
     }
 }
