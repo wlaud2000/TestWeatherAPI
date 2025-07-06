@@ -19,10 +19,22 @@ public class RegionResDTO {
             BigDecimal longitude,
             BigDecimal gridX,
             BigDecimal gridY,
-            String landRegCode,
-            String tempRegCode,
+            RegionCodeInfo regionCode,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
+    ) {
+    }
+
+    /**
+     * 지역코드 정보 응답 DTO
+     */
+    @Builder
+    public record RegionCodeInfo(
+            Long regionCodeId,
+            String landRegCode,
+            String tempRegCode,
+            String name,
+            String description
     ) {
     }
 
@@ -37,8 +49,7 @@ public class RegionResDTO {
             BigDecimal longitude,
             BigDecimal gridX,
             BigDecimal gridY,
-            String landRegCode,
-            String tempRegCode,
+            RegionCodeInfo regionCode,
             String message
     ) {
     }
@@ -97,6 +108,68 @@ public class RegionResDTO {
             String name,
             String landRegCode,
             String tempRegCode
+    ) {
+    }
+
+    /**
+     * 지역코드 목록 응답 DTO
+     */
+    @Builder
+    public record RegionCodeList(
+            List<RegionCodeDetail> regionCodes,
+            int totalCount
+    ) {
+    }
+
+    /**
+     * 지역코드 상세 정보 DTO
+     */
+    @Builder
+    public record RegionCodeDetail(
+            Long regionCodeId,
+            String landRegCode,
+            String tempRegCode,
+            String name,
+            String description,
+            int regionCount,  // 이 지역코드를 사용하는 지역 수
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
+    }
+
+    /**
+     * 지역코드 생성 응답 DTO
+     */
+    @Builder
+    public record CreateRegionCodeResponse(
+            Long regionCodeId,
+            String landRegCode,
+            String tempRegCode,
+            String name,
+            String description,
+            String message
+    ) {
+    }
+
+    /**
+     * 지역코드 삭제 응답 DTO
+     */
+    @Builder
+    public record DeleteRegionCodeResponse(
+            Long regionCodeId,
+            String name,
+            String message
+    ) {
+    }
+
+    /**
+     * 지역코드별 지역 목록 응답 DTO
+     */
+    @Builder
+    public record RegionsByCodeResponse(
+            RegionCodeInfo regionCode,
+            List<RegionSimple> regions,
+            int regionCount
     ) {
     }
 }

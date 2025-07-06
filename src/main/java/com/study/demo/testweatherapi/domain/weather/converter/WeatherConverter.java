@@ -42,8 +42,8 @@ public class WeatherConverter {
         return WeatherResDTO.RegionInfo.builder()
                 .regionId(region.getId())
                 .regionName(region.getName())
-                .landRegCode(region.getLandRegCode())
-                .tempRegCode(region.getTempRegCode())
+                .landRegCode(region.getRegionCode().getLandRegCode())
+                .tempRegCode(region.getRegionCode().getTempRegCode())
                 .build();
     }
 

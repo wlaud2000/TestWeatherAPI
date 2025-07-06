@@ -3,6 +3,7 @@ package com.study.demo.testweatherapi.domain.weather.converter;
 import com.study.demo.testweatherapi.domain.weather.dto.request.RegionReqDTO;
 import com.study.demo.testweatherapi.domain.weather.dto.response.RegionResDTO;
 import com.study.demo.testweatherapi.domain.weather.entity.Region;
+import com.study.demo.testweatherapi.domain.weather.entity.RegionCode;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
@@ -12,20 +13,107 @@ import java.util.List;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class RegionConverter {
 
+    // ==== RegionCode 관련 변환 메서드들 ====
+
+    /**
+     * CreateRegionCode 요청 DTO를 RegionCode 엔티티로 변환
+     */
+    public static RegionCode toRegionCodeEntity(RegionReqDTO.CreateRegionCode request) {
+        return RegionCode.builder()
+                .landRegCode(request.landRegCode())
+                .tempRegCode(request.tempRegCode())
+                .name(request.name())
+                .build();
+    }
+
+    /**
+     * RegionCode 엔티티를 RegionCodeInfo DTO로 변환
+     */
+    public static RegionResDTO.RegionCodeInfo toRegionCodeInfo(RegionCode regionCode) {
+        return RegionResDTO.RegionCodeInfo.builder()
+                .regionCodeId(regionCode.getId())
+                .landRegCode(regionCode.getLandRegCode())
+                .tempRegCode(regionCode.getTempRegCode())
+                .name(regionCode.getName())
+                .build();
+    }
+
+    /**
+     * RegionCode 엔티티를 RegionCodeDetail DTO로 변환
+     */
+    public static RegionResDTO.RegionCodeDetail toRegionCodeDetail(RegionCode regionCode, int regionCount) {
+        return RegionResDTO.RegionCodeDetail.builder()
+                .regionCodeId(regionCode.getId())
+                .landRegCode(regionCode.getLandRegCode())
+                .tempRegCode(regionCode.getTempRegCode())
+                .name(regionCode.getName())
+                .regionCount(regionCount)
+                .createdAt(regionCode.getCreatedAt())
+                .updatedAt(regionCode.getUpdatedAt())
+                .build();
+    }
+
+    /**
+     * RegionCode 엔티티를 CreateRegionCodeResponse DTO로 변환
+     */
+    public static RegionResDTO.CreateRegionCodeResponse toCreateRegionCodeResponse(RegionCode regionCode) {
+        return RegionResDTO.CreateRegionCodeResponse.builder()
+                .regionCodeId(regionCode.getId())
+                .landRegCode(regionCode.getLandRegCode())
+                .tempRegCode(regionCode.getTempRegCode())
+                .name(regionCode.getName())
+                .message("지역코드가 성공적으로 등록되었습니다.")
+                .build();
+    }
+
+    /**
+     * RegionCode 리스트를 RegionCodeList DTO로 변환
+     */
+    public static RegionResDTO.RegionCodeList toRegionCodeList(List<Object[]> regionCodesWithCount) {
+        List<RegionResDTO.RegionCodeDetail> regionCodeDetails = regionCodesWithCount.stream()
+                .map(result -> {
+                    RegionCode regionCode = (RegionCode) result[0];
+                    Long regionCount = (Long) result[1];
+                    return toRegionCodeDetail(regionCode, regionCount.intValue());
+                })
+                .toList();
+
+        return RegionResDTO.RegionCodeList.builder()
+                .regionCodes(regionCodeDetails)
+                .totalCount(regionCodeDetails.size())
+                .build();
+    }
+
+    // ==== Region 관련 변환 메서드들 ====
+
     /**
      * CreateRegion 요청 DTO를 Region 엔티티로 변환
      * 격자 좌표는 기상청 API 호출 후 설정
      */
     public static Region toEntity(RegionReqDTO.CreateRegion request,
-                                  BigDecimal gridX, BigDecimal gridY) {
+                                  BigDecimal gridX, BigDecimal gridY, RegionCode regionCode) {
         return Region.builder()
                 .name(request.name())
                 .latitude(request.latitude())
                 .longitude(request.longitude())
                 .gridX(gridX)
                 .gridY(gridY)
-                .landRegCode(request.landRegCode())
-                .tempRegCode(request.tempRegCode())
+                .regionCode(regionCode)
+                .build();
+    }
+
+    /**
+     * CreateRegionWithNewCode 요청으로 Region 엔티티 생성
+     */
+    public static Region toEntityWithNewCode(RegionReqDTO.CreateRegionWithNewCode request,
+                                             BigDecimal gridX, BigDecimal gridY, RegionCode regionCode) {
+        return Region.builder()
+                .name(request.name())
+                .latitude(request.latitude())
+                .longitude(request.longitude())
+                .gridX(gridX)
+                .gridY(gridY)
+                .regionCode(regionCode)
                 .build();
     }
 
@@ -40,8 +128,7 @@ public class RegionConverter {
                 .longitude(region.getLongitude())
                 .gridX(region.getGridX())
                 .gridY(region.getGridY())
-                .landRegCode(region.getLandRegCode())
-                .tempRegCode(region.getTempRegCode())
+                .regionCode(toRegionCodeInfo(region.getRegionCode()))
                 .createdAt(region.getCreatedAt())
                 .updatedAt(region.getUpdatedAt())
                 .build();
@@ -58,8 +145,7 @@ public class RegionConverter {
                 .longitude(region.getLongitude())
                 .gridX(region.getGridX())
                 .gridY(region.getGridY())
-                .landRegCode(region.getLandRegCode())
-                .tempRegCode(region.getTempRegCode())
+                .regionCode(toRegionCodeInfo(region.getRegionCode()))
                 .message("지역이 성공적으로 등록되었습니다.")
                 .build();
     }
@@ -115,8 +201,8 @@ public class RegionConverter {
         return RegionResDTO.RegionSimple.builder()
                 .regionId(region.getId())
                 .name(region.getName())
-                .landRegCode(region.getLandRegCode())
-                .tempRegCode(region.getTempRegCode())
+                .landRegCode(region.getRegionCode().getLandRegCode())
+                .tempRegCode(region.getRegionCode().getTempRegCode())
                 .build();
     }
 
@@ -128,6 +214,33 @@ public class RegionConverter {
                 .regionId(region.getId())
                 .name(region.getName())
                 .message("지역이 성공적으로 삭제되었습니다.")
+                .build();
+    }
+
+    /**
+     * RegionCode 엔티티를 DeleteRegionCodeResponse DTO로 변환
+     */
+    public static RegionResDTO.DeleteRegionCodeResponse toDeleteRegionCodeResponse(RegionCode regionCode) {
+        return RegionResDTO.DeleteRegionCodeResponse.builder()
+                .regionCodeId(regionCode.getId())
+                .name(regionCode.getName())
+                .message("지역코드가 성공적으로 삭제되었습니다.")
+                .build();
+    }
+
+    /**
+     * 지역코드별 지역 목록 응답 생성
+     */
+    public static RegionResDTO.RegionsByCodeResponse toRegionsByCodeResponse(
+            RegionCode regionCode, List<Region> regions) {
+        List<RegionResDTO.RegionSimple> regionSimples = regions.stream()
+                .map(RegionConverter::toRegionSimple)
+                .toList();
+
+        return RegionResDTO.RegionsByCodeResponse.builder()
+                .regionCode(toRegionCodeInfo(regionCode))
+                .regions(regionSimples)
+                .regionCount(regions.size())
                 .build();
     }
 }

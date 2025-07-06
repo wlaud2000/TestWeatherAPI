@@ -25,7 +25,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/weather/recommendation")
 @RequiredArgsConstructor
-@Validated
 @Tag(name = "날씨 추천 조회 API", description = "사용자용 날씨 기반 데이트 코스 추천 조회 API")
 public class WeatherRecommendationController {
 
@@ -39,17 +38,20 @@ public class WeatherRecommendationController {
             description = "특정 지역의 특정 날짜 날씨 기반 데이트 코스 추천을 조회합니다.")
     public ResponseEntity<CustomResponse<WeatherResDTO.WeatherRecommendation>> getRecommendation(
             @Parameter(description = "지역 ID", required = true)
-            @PathVariable @NotNull @Positive Long regionId,
+            @PathVariable Long regionId,
 
             @Parameter(description = "조회할 날짜 (YYYY-MM-DD)", required = true, example = "2025-07-04")
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
 
         log.info("날씨 추천 조회 API 호출: regionId={}, date={}", regionId, date);
 
-            WeatherReqDTO.GetRecommendation request = new WeatherReqDTO.GetRecommendation(regionId, date);
-            WeatherResDTO.WeatherRecommendation response = weatherRecommendationService.getRecommendation(request);
+        // 파라미터 유효성 검증
+        validateParameters(regionId, date);
 
-            return ResponseEntity.ok(CustomResponse.onSuccess(response));
+        WeatherReqDTO.GetRecommendation request = new WeatherReqDTO.GetRecommendation(regionId, date);
+        WeatherResDTO.WeatherRecommendation response = weatherRecommendationService.getRecommendation(request);
+
+        return ResponseEntity.ok(CustomResponse.onSuccess(response));
     }
 
     /**
@@ -60,12 +62,15 @@ public class WeatherRecommendationController {
             description = "특정 지역의 7일간 날씨 기반 데이트 코스 추천을 조회합니다.")
     public ResponseEntity<CustomResponse<WeatherResDTO.WeeklyRecommendation>> getWeeklyRecommendation(
             @Parameter(description = "지역 ID", required = true)
-            @PathVariable @NotNull @Positive Long regionId,
+            @PathVariable Long regionId,
 
             @Parameter(description = "시작 날짜 (YYYY-MM-DD)", required = true, example = "2025-07-04")
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate) {
 
         log.info("주간 날씨 추천 조회 API 호출: regionId={}, startDate={}", regionId, startDate);
+
+        // 파라미터 유효성 검증
+        validateParameters(regionId, startDate);
 
         WeatherReqDTO.GetWeeklyRecommendation request =
                 new WeatherReqDTO.GetWeeklyRecommendation(regionId, startDate);
@@ -83,7 +88,7 @@ public class WeatherRecommendationController {
             description = "특정 지역의 특정 날짜 범위 날씨 기반 데이트 코스 추천을 조회합니다.")
     public ResponseEntity<CustomResponse<WeatherResDTO.WeeklyRecommendation>> getRecommendationByDateRange(
             @Parameter(description = "지역 ID", required = true)
-            @PathVariable @NotNull @Positive Long regionId,
+            @PathVariable Long regionId,
 
             @Parameter(description = "시작 날짜 (YYYY-MM-DD)", required = true, example = "2025-07-04")
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
@@ -93,6 +98,14 @@ public class WeatherRecommendationController {
 
         log.info("날짜 범위 날씨 추천 조회 API 호출: regionId={}, startDate={}, endDate={}",
                 regionId, startDate, endDate);
+
+        // 파라미터 유효성 검증
+        validateParameters(regionId, startDate);
+        validateParameters(regionId, endDate);
+
+        if (startDate.isAfter(endDate)) {
+            throw new WeatherException(WeatherErrorCode.INVALID_DATE_RANGE);
+        }
 
         WeatherReqDTO.GetRecommendationByDateRange request =
                 new WeatherReqDTO.GetRecommendationByDateRange(regionId, startDate, endDate);
@@ -110,9 +123,12 @@ public class WeatherRecommendationController {
             description = "특정 지역의 최근 7일간 날씨 추천 정보를 조회합니다.")
     public ResponseEntity<CustomResponse<List<WeatherResDTO.WeatherRecommendationSummary>>> getLatestRecommendations(
             @Parameter(description = "지역 ID", required = true)
-            @PathVariable @NotNull @Positive Long regionId) {
+            @PathVariable Long regionId) {
 
         log.info("최근 날씨 추천 조회 API 호출: regionId={}", regionId);
+
+        // 파라미터 유효성 검증
+        validateRegionId(regionId);
 
         List<WeatherResDTO.WeatherRecommendationSummary> response =
                 weatherRecommendationService.getLatestRecommendations(regionId);
@@ -128,16 +144,55 @@ public class WeatherRecommendationController {
             description = "특정 지역의 특정 날짜에 추천 데이터가 있는지 확인합니다.")
     public ResponseEntity<CustomResponse<Boolean>> checkRecommendationExists(
             @Parameter(description = "지역 ID", required = true)
-            @PathVariable @NotNull @Positive Long regionId,
+            @PathVariable Long regionId,
 
             @Parameter(description = "확인할 날짜 (YYYY-MM-DD)", required = true, example = "2025-07-04")
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
 
         log.info("추천 데이터 존재 확인 API 호출: regionId={}, date={}", regionId, date);
 
+        // 파라미터 유효성 검증
+        validateParameters(regionId, date);
+
         boolean exists = weatherRecommendationService.hasRecommendationData(regionId, date);
 
         return ResponseEntity.ok(CustomResponse.onSuccess(exists));
     }
-}
 
+    /**
+     * 파라미터 유효성 검증 (지역 ID + 날짜)
+     */
+    private void validateParameters(Long regionId, LocalDate date) {
+        validateRegionId(regionId);
+        validateDate(date);
+    }
+
+    /**
+     * 지역 ID 유효성 검증
+     */
+    private void validateRegionId(Long regionId) {
+        if (regionId == null || regionId <= 0) {
+            log.warn("잘못된 지역 ID: {}", regionId);
+            throw new WeatherException(WeatherErrorCode.INVALID_DATE_RANGE);
+        }
+    }
+
+    /**
+     * 날짜 유효성 검증
+     */
+    private void validateDate(LocalDate date) {
+        if (date == null) {
+            log.warn("날짜가 null입니다");
+            throw new WeatherException(WeatherErrorCode.INVALID_DATE_RANGE);
+        }
+
+        LocalDate now = LocalDate.now();
+        LocalDate minDate = now.minusDays(30);
+        LocalDate maxDate = now.plusDays(7);
+
+        if (date.isBefore(minDate) || date.isAfter(maxDate)) {
+            log.warn("조회 가능한 날짜 범위를 벗어남: {}, 허용범위: {} ~ {}", date, minDate, maxDate);
+            throw new WeatherException(WeatherErrorCode.INVALID_DATE_RANGE);
+        }
+    }
+}

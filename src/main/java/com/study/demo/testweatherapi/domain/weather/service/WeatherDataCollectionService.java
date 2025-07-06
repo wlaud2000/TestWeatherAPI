@@ -246,11 +246,22 @@ public class WeatherDataCollectionService {
      */
     private String callMediumTermLandWeatherApi(Region region, LocalDate tmfc) {
         try {
+            // RegionCode를 통해 landRegCode 가져오기
+            String landRegCode = region.getRegionCode() != null ?
+                    region.getRegionCode().getLandRegCode() : null;
+
+            if (landRegCode == null) {
+                throw new WeatherException(WeatherErrorCode.INVALID_REGION_CODE);
+            }
+
+            log.debug("중기 육상예보 API 호출: regionId={}, landRegCode={}",
+                    region.getId(), landRegCode);
+
             String response = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path(mediumTermLandUrl)
                             .queryParam("authKey", apiKey)
-                            .queryParam("reg", region.getLandRegCode())  // 변경: landRegCode 사용
+                            .queryParam("reg", landRegCode)  // RegionCode에서 가져온 landRegCode 사용
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)
@@ -260,11 +271,14 @@ public class WeatherDataCollectionService {
                 throw new WeatherException(WeatherErrorCode.MEDIUM_TERM_FORECAST_ERROR);
             }
 
+            log.debug("중기 육상예보 API 응답 수신 완료: regionId={}, 응답길이={}",
+                    region.getId(), response.length());
+
             return response;
 
         } catch (Exception e) {
             log.error("중기 육상 예보 API 호출 실패: regionId={}, landRegCode={}",
-                    region.getId(), region.getLandRegCode(), e);
+                    region.getId(), region.getRegionCode().getLandRegCode(), e);
             throw new WeatherException(WeatherErrorCode.MEDIUM_TERM_FORECAST_ERROR);
         }
     }
@@ -274,11 +288,22 @@ public class WeatherDataCollectionService {
      */
     private String callMediumTermTempWeatherApi(Region region, LocalDate tmfc) {
         try {
+            // RegionCode를 통해 tempRegCode 가져오기
+            String tempRegCode = region.getRegionCode() != null ?
+                    region.getRegionCode().getTempRegCode() : null;
+
+            if (tempRegCode == null) {
+                throw new WeatherException(WeatherErrorCode.INVALID_REGION_CODE);
+            }
+
+            log.debug("중기 기온예보 API 호출: regionId={}, tempRegCode={}",
+                    region.getId(), tempRegCode);
+
             String response = webClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path(mediumTermTempUrl)
                             .queryParam("authKey", apiKey)
-                            .queryParam("reg", region.getTempRegCode())  // 변경: tempRegCode 사용
+                            .queryParam("reg", tempRegCode)  // RegionCode에서 가져온 tempRegCode 사용
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)
@@ -288,11 +313,14 @@ public class WeatherDataCollectionService {
                 throw new WeatherException(WeatherErrorCode.MEDIUM_TERM_FORECAST_ERROR);
             }
 
+            log.debug("중기 기온예보 API 응답 수신 완료: regionId={}, 응답길이={}",
+                    region.getId(), response.length());
+
             return response;
 
         } catch (Exception e) {
             log.error("중기 기온 예보 API 호출 실패: regionId={}, tempRegCode={}",
-                    region.getId(), region.getTempRegCode(), e);
+                    region.getId(), region.getRegionCode().getTempRegCode(), e);
             throw new WeatherException(WeatherErrorCode.MEDIUM_TERM_FORECAST_ERROR);
         }
     }
@@ -349,6 +377,8 @@ public class WeatherDataCollectionService {
                 }
             }
 
+            log.debug("단기예보 파싱 완료: regionId={}, 파싱된 데이터 수={}",
+                    region.getId(), results.size());
             return results;
 
         } catch (Exception e) {
@@ -417,11 +447,14 @@ public class WeatherDataCollectionService {
 
     // ==== 내부 유틸리티 메서드들 ====
 
+    /**
+     * 대상 지역 조회 (RegionCode 함께 fetch)
+     */
     private List<Region> getTargetRegions(List<Long> regionIds) {
         if (regionIds == null || regionIds.isEmpty()) {
-            return regionRepository.findAllActiveRegions();
+            return regionRepository.findAllActiveRegions();  // 이미 RegionCode fetch join 포함
         } else {
-            return regionRepository.findAllById(regionIds);
+            return regionRepository.findByIdsWithRegionCode(regionIds);  // RegionCode fetch join 포함
         }
     }
 
@@ -521,31 +554,36 @@ public class WeatherDataCollectionService {
     private Map<String, MediumTermLandData> parseMediumTermLandData(String response) {
         Map<String, MediumTermLandData> result = new HashMap<>();
 
-        Pattern pattern = Pattern.compile("#START7777(.*?)#7777END", Pattern.DOTALL);
-        Matcher matcher = pattern.matcher(response);
+        try {
+            Pattern pattern = Pattern.compile("#START7777(.*?)#7777END", Pattern.DOTALL);
+            Matcher matcher = pattern.matcher(response);
 
-        if (matcher.find()) {
-            String data = matcher.group(1);
-            String[] lines = data.split("\n");
+            if (matcher.find()) {
+                String data = matcher.group(1);
+                String[] lines = data.split("\n");
 
-            for (String line : lines) {
-                if (line.trim().isEmpty() || line.startsWith("#")) continue;
+                for (String line : lines) {
+                    if (line.trim().isEmpty() || line.startsWith("#")) continue;
 
-                String[] parts = line.trim().split("\\s+");
-                if (parts.length >= 11) {
-                    MediumTermLandData landData = new MediumTermLandData(
-                            parts[1],  // TM_FC
-                            parts[2],  // TM_EF
-                            parts[6],  // SKY
-                            parts[10]  // RN_ST
-                    );
+                    String[] parts = line.trim().split("\\s+");
+                    if (parts.length >= 11) {
+                        MediumTermLandData landData = new MediumTermLandData(
+                                parts[1],  // TM_FC
+                                parts[2],  // TM_EF
+                                parts[6],  // SKY
+                                parts[10]  // RN_ST
+                        );
 
-                    String key = parts[1] + "_" + parts[2];
-                    result.put(key, landData);
+                        String key = parts[1] + "_" + parts[2];
+                        result.put(key, landData);
+                    }
                 }
             }
+        } catch (Exception e) {
+            log.error("중기 육상예보 파싱 실패", e);
         }
 
+        log.debug("중기 육상예보 파싱 완료: {} 건", result.size());
         return result;
     }
 
@@ -564,24 +602,29 @@ public class WeatherDataCollectionService {
                     if (line.trim().isEmpty() || line.startsWith("#")) continue;
 
                     String[] parts = line.trim().split("\\s+");
-                    if (parts.length >= 7) {
+                    // 컬럼 구조: REG_ID TM_FC TM_EF MOD STN C MIN MAX MIN_L MIN_H MAX_L MAX_H
+                    // parts[6] = MIN, parts[7] = MAX 이므로 길이는 최소 8이어야 함
+                    if (parts.length >= 8) {
                         try {
                             MediumTermTempData tempData = new MediumTermTempData(
                                     parts[1],  // TM_FC
                                     parts[2],  // TM_EF
-                                    parts[3],  // MIN (여기서 "A01" 같은 값이 올 수 있음)
-                                    parts[4]   // MAX (여기서 "A01" 같은 값이 올 수 있음)
+                                    parts[6],  // MIN (26, 25 등)
+                                    parts[7]   // MAX (34, 33 등)
                             );
 
                             String key = parts[1] + "_" + parts[2];
                             result.put(key, tempData);
 
                             log.trace("중기 기온예보 라인 파싱: key={}, min={}, max={}",
-                                    key, parts[3], parts[4]);
+                                    key, parts[6], parts[7]);
                         } catch (Exception e) {
                             log.warn("중기 기온예보 라인 파싱 실패 (스킵): line='{}', error={}",
                                     line.trim(), e.getMessage());
                         }
+                    } else {
+                        log.debug("중기 기온예보 라인 길이 부족 (스킵): line='{}', parts.length={}",
+                                line.trim(), parts.length);
                     }
                 }
             } else {

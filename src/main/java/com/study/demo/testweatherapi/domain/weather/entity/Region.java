@@ -35,11 +35,9 @@ public class Region extends BaseEntity {
     @Column(name = "grid_y", nullable = false, precision = 5, scale = 2)
     private BigDecimal gridY;
 
-    @Column(name = "land_reg_code")
-    private String landRegCode;    // 중기 육상 예보용 지역 코드
-
-    @Column(name = "temp_reg_code")
-    private String tempRegCode;    // 중기 기온 예보용 지역 코드
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "region_code_id", nullable = false)
+    private RegionCode regionCode;
 
     @OneToMany(mappedBy = "region", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
@@ -52,4 +50,17 @@ public class Region extends BaseEntity {
     @OneToMany(mappedBy = "region", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<DailyRecommendation> dailyRecommendations = new ArrayList<>();
+
+    /**
+     * 지역 정보 업데이트 메서드
+     */
+    public void updateRegion(String name, BigDecimal latitude, BigDecimal longitude,
+                             BigDecimal gridX, BigDecimal gridY, RegionCode regionCode) {
+        this.name = name;
+        this.latitude = latitude;
+        this.longitude = longitude;
+        this.gridX = gridX;
+        this.gridY = gridY;
+        this.regionCode = regionCode;
+    }
 }

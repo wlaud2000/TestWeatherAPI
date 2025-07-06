@@ -4,8 +4,10 @@ import com.study.demo.testweatherapi.domain.weather.converter.RegionConverter;
 import com.study.demo.testweatherapi.domain.weather.dto.request.RegionReqDTO;
 import com.study.demo.testweatherapi.domain.weather.dto.response.RegionResDTO;
 import com.study.demo.testweatherapi.domain.weather.entity.Region;
+import com.study.demo.testweatherapi.domain.weather.entity.RegionCode;
 import com.study.demo.testweatherapi.domain.weather.exception.WeatherErrorCode;
 import com.study.demo.testweatherapi.domain.weather.exception.WeatherException;
+import com.study.demo.testweatherapi.domain.weather.repository.RegionCodeRepository;
 import com.study.demo.testweatherapi.domain.weather.repository.RegionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ import java.util.regex.Pattern;
 public class RegionService {
 
     private final RegionRepository regionRepository;
+    private final RegionCodeRepository regionCodeRepository;
     private final WebClient webClient;
 
     @Value("${weather.api.key}")
@@ -35,27 +38,118 @@ public class RegionService {
     @Value("${weather.api.grid-conversion-url}")
     private String gridConversionUrl;
 
+    // ==== 지역코드 관련 메서드들 ====
+
     /**
-     * 새로운 지역 등록
-     * 1. 중복 체크
-     * 2. 기상청 API로 격자 좌표 변환
-     * 3. 지역 저장
+     * 새로운 지역코드 등록
+     */
+    @Transactional
+    public RegionResDTO.CreateRegionCodeResponse createRegionCode(RegionReqDTO.CreateRegionCode request) {
+        log.info("지역코드 등록 요청: {}", request.name());
+
+        // 중복 체크
+        validateDuplicateRegionCode(request);
+
+        // 지역코드 저장
+        RegionCode regionCode = RegionConverter.toRegionCodeEntity(request);
+        RegionCode savedRegionCode = regionCodeRepository.save(regionCode);
+
+        log.info("지역코드 등록 완료: {} (ID: {})", savedRegionCode.getName(), savedRegionCode.getId());
+        return RegionConverter.toCreateRegionCodeResponse(savedRegionCode);
+    }
+
+    /**
+     * 모든 지역코드 조회
+     */
+    public RegionResDTO.RegionCodeList getAllRegionCodes() {
+        List<Object[]> regionCodesWithCount = regionCodeRepository.findAllWithRegionCount();
+        return RegionConverter.toRegionCodeList(regionCodesWithCount);
+    }
+
+    /**
+     * 특정 지역코드를 사용하는 지역들 조회
+     */
+    public RegionResDTO.RegionsByCodeResponse getRegionsByCode(Long regionCodeId) {
+        RegionCode regionCode = regionCodeRepository.findById(regionCodeId)
+                .orElseThrow(() -> new WeatherException(WeatherErrorCode.REGION_NOT_FOUND));
+
+        List<Region> regions = regionRepository.findByRegionCodeId(regionCodeId);
+        return RegionConverter.toRegionsByCodeResponse(regionCode, regions);
+    }
+
+    /**
+     * 지역코드 삭제
+     */
+    @Transactional
+    public RegionResDTO.DeleteRegionCodeResponse deleteRegionCode(Long regionCodeId) {
+        RegionCode regionCode = regionCodeRepository.findById(regionCodeId)
+                .orElseThrow(() -> new WeatherException(WeatherErrorCode.REGION_NOT_FOUND));
+
+        // 사용 중인 지역이 있는지 확인
+        long regionCount = regionCodeRepository.countRegionsByRegionCodeId(regionCodeId);
+        if (regionCount > 0) {
+            throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
+        }
+
+        regionCodeRepository.delete(regionCode);
+        return RegionConverter.toDeleteRegionCodeResponse(regionCode);
+    }
+
+    // ==== 기존 지역 관련 메서드들 (수정) ====
+
+    /**
+     * 새로운 지역 등록 (기존 지역코드 사용)
      */
     @Transactional
     public RegionResDTO.CreateRegionResponse createRegion(RegionReqDTO.CreateRegion request) {
         log.info("지역 등록 요청: {}", request.name());
 
         // 1. 중복 체크
-        validateDuplicateRegion(request);
+        validateDuplicateRegion(request.name(), request.latitude(), request.longitude());
+
+        // 2. 지역코드 존재 확인
+        RegionCode regionCode = regionCodeRepository.findById(request.regionCodeId())
+                .orElseThrow(() -> new WeatherException(WeatherErrorCode.REGION_NOT_FOUND));
+
+        // 3. 격자 좌표 변환
+        CoordinateResult coordinateResult = convertToGridCoordinates(request.latitude(), request.longitude());
+
+        // 4. 지역 저장
+        Region region = RegionConverter.toEntity(request, coordinateResult.gridX(), coordinateResult.gridY(), regionCode);
+        Region savedRegion = regionRepository.save(region);
+
+        log.info("지역 등록 완료: {} (ID: {})", savedRegion.getName(), savedRegion.getId());
+        return RegionConverter.toCreateResponse(savedRegion);
+    }
+
+    /**
+     * 새로운 지역 등록 (새 지역코드와 함께)
+     */
+    @Transactional
+    public RegionResDTO.CreateRegionResponse createRegionWithNewCode(RegionReqDTO.CreateRegionWithNewCode request) {
+        log.info("지역+지역코드 등록 요청: {}", request.name());
+
+        // 1. 중복 체크
+        validateDuplicateRegion(request.name(), request.latitude(), request.longitude());
+        validateDuplicateRegionCode(request.landRegCode(), request.tempRegCode());
 
         // 2. 격자 좌표 변환
         CoordinateResult coordinateResult = convertToGridCoordinates(request.latitude(), request.longitude());
 
-        // 3. 지역 저장
-        Region region = RegionConverter.toEntity(request, coordinateResult.gridX(), coordinateResult.gridY());
+        // 3. 지역코드 먼저 생성
+        RegionCode regionCode = RegionCode.builder()
+                .landRegCode(request.landRegCode())
+                .tempRegCode(request.tempRegCode())
+                .name(request.regionCodeName())
+                .build();
+        RegionCode savedRegionCode = regionCodeRepository.save(regionCode);
+
+        // 4. 지역 저장
+        Region region = RegionConverter.toEntityWithNewCode(
+                request, coordinateResult.gridX(), coordinateResult.gridY(), savedRegionCode);
         Region savedRegion = regionRepository.save(region);
 
-        log.info("지역 등록 완료: {} (ID: {})", savedRegion.getName(), savedRegion.getId());
+        log.info("지역+지역코드 등록 완료: {} (ID: {})", savedRegion.getName(), savedRegion.getId());
         return RegionConverter.toCreateResponse(savedRegion);
     }
 
@@ -86,7 +180,7 @@ public class RegionService {
      * 지역 상세 조회
      */
     public RegionResDTO.RegionInfo getRegionById(Long regionId) {
-        Region region = regionRepository.findById(regionId)
+        Region region = regionRepository.findByIdWithRegionCode(regionId)
                 .orElseThrow(() -> new WeatherException(WeatherErrorCode.REGION_NOT_FOUND));
         return RegionConverter.toRegionInfo(region);
     }
@@ -104,7 +198,7 @@ public class RegionService {
      */
     @Transactional
     public RegionResDTO.DeleteRegionResponse deleteRegion(Long regionId) {
-        Region region = regionRepository.findById(regionId)
+        Region region = regionRepository.findByIdWithRegionCode(regionId)
                 .orElseThrow(() -> new WeatherException(WeatherErrorCode.REGION_NOT_FOUND));
 
         // 연관된 날씨 데이터가 있는지 확인 (실제로는 CASCADE로 삭제됨)
@@ -115,6 +209,8 @@ public class RegionService {
 
         return RegionConverter.toDeleteResponse(region);
     }
+
+    // ==== 내부 유틸리티 메서드들 ====
 
     /**
      * 기상청 API를 호출하여 위경도를 격자 좌표로 변환
@@ -210,18 +306,41 @@ public class RegionService {
     /**
      * 지역 중복 검증
      */
-    private void validateDuplicateRegion(RegionReqDTO.CreateRegion request) {
+    private void validateDuplicateRegion(String name, BigDecimal latitude, BigDecimal longitude) {
         // 지역명 중복 체크
-        if (regionRepository.existsByName(request.name())) {
+        if (regionRepository.existsByName(name)) {
             throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
         }
 
         // 유사한 좌표 체크 (매우 가까운 거리의 지역이 이미 있는지 확인)
-        List<Region> nearRegions = regionRepository.findByNearCoordinates(
-                request.latitude(), request.longitude());
+        List<Region> nearRegions = regionRepository.findByNearCoordinates(latitude, longitude);
         if (!nearRegions.isEmpty()) {
             log.warn("유사한 좌표의 지역이 이미 존재합니다: {}", nearRegions.get(0).getName());
             throw new WeatherException(WeatherErrorCode.INVALID_COORDINATES);
+        }
+    }
+
+    /**
+     * 지역코드 중복 검증 (CreateRegionCode용)
+     */
+    private void validateDuplicateRegionCode(RegionReqDTO.CreateRegionCode request) {
+        if (regionCodeRepository.existsByLandRegCode(request.landRegCode())) {
+            throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
+        }
+        if (regionCodeRepository.existsByTempRegCode(request.tempRegCode())) {
+            throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
+        }
+    }
+
+    /**
+     * 지역코드 중복 검증 (코드값으로)
+     */
+    private void validateDuplicateRegionCode(String landRegCode, String tempRegCode) {
+        if (regionCodeRepository.existsByLandRegCode(landRegCode)) {
+            throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
+        }
+        if (regionCodeRepository.existsByTempRegCode(tempRegCode)) {
+            throw new WeatherException(WeatherErrorCode.REGION_ALREADY_EXISTS);
         }
     }
 
