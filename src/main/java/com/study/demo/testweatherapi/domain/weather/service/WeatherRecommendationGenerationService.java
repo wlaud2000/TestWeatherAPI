@@ -139,14 +139,9 @@ public class WeatherRecommendationGenerationService {
             try {
                 long daysFromToday = ChronoUnit.DAYS.between(LocalDate.now(), currentDate);
 
-                // 타입별 로깅
-                if ("단기예보".equals(recommendationType) && daysFromToday <= 2) {
-                    log.debug("단기예보 기반 추천 생성: {} 지역 {} ({}일후)",
-                            region.getName(), currentDate, daysFromToday);
-                } else if ("중기예보".equals(recommendationType) && daysFromToday >= 3) {
-                    log.debug("중기예보 기반 추천 생성: {} 지역 {} ({}일후)",
-                            region.getName(), currentDate, daysFromToday);
-                }
+                // 타입별 로깅 개선
+                log.debug("{} 추천 생성: {} 지역 {} ({}일후)",
+                        recommendationType, region.getName(), currentDate, daysFromToday);
 
                 RecommendationResult result = generateRecommendationForDate(
                         region, currentDate, forceRegenerate, templateMap);
@@ -231,38 +226,34 @@ public class WeatherRecommendationGenerationService {
 
     /**
      * 특정 날짜의 날씨 데이터 분류
-     * 우선순위: 단기예보(0-2일) > 중기예보(3-6일)
+     * 실제 데이터 존재 여부를 확인해서 적절한 예보 사용
      */
     private WeatherClassificationService.WeatherClassificationResult classifyWeatherForDate(
             Region region, LocalDate date) {
         LocalDate today = LocalDate.now();
         long daysFromToday = ChronoUnit.DAYS.between(today, date);
 
-        if (daysFromToday <= 2) {
-            // 단기 예보 데이터 사용 (0-2일)
-            List<RawShortTermWeather> shortTermData =
-                    shortTermWeatherRepository.findLatestByRegionIdAndFcstDate(region.getId(), date);
+        // 1. 먼저 단기예보 데이터 확인 (우선순위 높음)
+        List<RawShortTermWeather> shortTermData =
+                shortTermWeatherRepository.findLatestByRegionIdAndFcstDate(region.getId(), date);
 
-            if (!shortTermData.isEmpty()) {
-                log.trace("단기예보 데이터 사용: regionId={}, date={}, 데이터 수={}",
-                        region.getId(), date, shortTermData.size());
-                return classificationService.classifyShortTermWeather(shortTermData, region.getId(), date);
-            }
+        if (!shortTermData.isEmpty()) {
+            log.trace("단기예보 데이터 사용: regionId={}, date={}, 데이터 수={}, daysFromToday={}",
+                    region.getId(), date, shortTermData.size(), daysFromToday);
+            return classificationService.classifyShortTermWeather(shortTermData, region.getId(), date);
         }
 
-        if (daysFromToday >= 3 && daysFromToday <= 6) {
-            // 중기 예보 데이터 사용 (3-6일)
-            List<RawMediumTermWeather> mediumTermData =
-                    mediumTermWeatherRepository.findLatestByRegionIdAndTmef(region.getId(), date);
+        // 2. 단기예보 데이터가 없으면 중기예보 데이터 확인
+        List<RawMediumTermWeather> mediumTermData =
+                mediumTermWeatherRepository.findLatestByRegionIdAndTmef(region.getId(), date);
 
-            if (!mediumTermData.isEmpty()) {
-                log.trace("중기예보 데이터 사용: regionId={}, date={}, 데이터 수={}",
-                        region.getId(), date, mediumTermData.size());
-                return classificationService.classifyMediumTermWeather(mediumTermData, region.getId(), date);
-            }
+        if (!mediumTermData.isEmpty()) {
+            log.trace("중기예보 데이터 사용: regionId={}, date={}, 데이터 수={}, daysFromToday={}",
+                    region.getId(), date, mediumTermData.size(), daysFromToday);
+            return classificationService.classifyMediumTermWeather(mediumTermData, region.getId(), date);
         }
 
-        // 데이터가 없으면 예외 처리
+        // 3. 둘 다 없으면 예외 처리
         log.warn("날씨 데이터가 없어서 추천 생성 실패: regionId={}, date={}, daysFromToday={}",
                 region.getId(), date, daysFromToday);
         throw new WeatherException(WeatherErrorCode.WEATHER_DATA_NOT_FOUND);

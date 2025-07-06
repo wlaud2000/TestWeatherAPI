@@ -12,6 +12,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,6 +27,7 @@ import java.time.LocalDate;
 @RestController
 @RequestMapping("/api/weather")
 @RequiredArgsConstructor
+@Validated
 @Tag(name = "간편 날씨 조회 API", description = "간단한 날씨 추천 조회 API")
 class SimpleWeatherController {
 
@@ -40,7 +42,9 @@ class SimpleWeatherController {
             @PathVariable @NotNull @Positive Long regionId) {
 
         LocalDate today = LocalDate.now();
-        WeatherReqDTO.GetRecommendation request = new WeatherReqDTO.GetRecommendation(regionId, today);
+
+        // 정적 팩토리 메서드 사용
+        WeatherReqDTO.GetRecommendation request = WeatherReqDTO.GetRecommendation.of(regionId, today);
 
         WeatherResDTO.WeatherRecommendation response = weatherRecommendationService.getRecommendation(request);
         return ResponseEntity.ok(CustomResponse.onSuccess(response));
@@ -55,7 +59,9 @@ class SimpleWeatherController {
             @PathVariable @NotNull @Positive Long regionId) {
 
         LocalDate tomorrow = LocalDate.now().plusDays(1);
-        WeatherReqDTO.GetRecommendation request = new WeatherReqDTO.GetRecommendation(regionId, tomorrow);
+
+        // 정적 팩토리 메서드 사용
+        WeatherReqDTO.GetRecommendation request = WeatherReqDTO.GetRecommendation.of(regionId, tomorrow);
 
         WeatherResDTO.WeatherRecommendation response = weatherRecommendationService.getRecommendation(request);
         return ResponseEntity.ok(CustomResponse.onSuccess(response));
@@ -70,8 +76,10 @@ class SimpleWeatherController {
             @PathVariable @NotNull @Positive Long regionId) {
 
         LocalDate today = LocalDate.now();
+
+        // 정적 팩토리 메서드 사용
         WeatherReqDTO.GetWeeklyRecommendation request =
-                new WeatherReqDTO.GetWeeklyRecommendation(regionId, today);
+                WeatherReqDTO.GetWeeklyRecommendation.of(regionId, today);
 
         WeatherResDTO.WeeklyRecommendation response =
                 weatherRecommendationService.getWeeklyRecommendation(request);

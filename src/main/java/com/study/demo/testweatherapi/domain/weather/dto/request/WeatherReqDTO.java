@@ -20,10 +20,11 @@ public class WeatherReqDTO {
             LocalDate date
     ) {
         /**
-         * 날짜 유효성 검증
+         * 날짜 유효성 검증을 포함한 정적 팩토리 메서드
          * 과거 30일 ~ 미래 7일까지만 조회 가능
          */
-        public GetRecommendation {
+        public static GetRecommendation of(Long regionId, LocalDate date) {
+            // Bean Validation이 null 체크를 하므로 여기서는 날짜 범위만 체크
             if (date != null) {
                 LocalDate now = LocalDate.now();
                 LocalDate minDate = now.minusDays(30);
@@ -34,6 +35,8 @@ public class WeatherReqDTO {
                             "조회 가능한 날짜 범위를 벗어났습니다. (30일 전 ~ 7일 후)");
                 }
             }
+
+            return new GetRecommendation(regionId, date);
         }
     }
 
@@ -50,10 +53,10 @@ public class WeatherReqDTO {
             LocalDate startDate
     ) {
         /**
-         * 시작 날짜 유효성 검증
+         * 시작 날짜 유효성 검증을 포함한 정적 팩토리 메서드
          * 과거 7일 ~ 미래 7일까지만 조회 가능
          */
-        public GetWeeklyRecommendation {
+        public static GetWeeklyRecommendation of(Long regionId, LocalDate startDate) {
             if (startDate != null) {
                 LocalDate now = LocalDate.now();
                 LocalDate minDate = now.minusDays(7);
@@ -64,6 +67,8 @@ public class WeatherReqDTO {
                             "조회 가능한 시작 날짜 범위를 벗어났습니다. (7일 전 ~ 7일 후)");
                 }
             }
+
+            return new GetWeeklyRecommendation(regionId, startDate);
         }
 
         /**
@@ -89,9 +94,9 @@ public class WeatherReqDTO {
             LocalDate endDate
     ) {
         /**
-         * 날짜 범위 유효성 검증
+         * 날짜 범위 유효성 검증을 포함한 정적 팩토리 메서드
          */
-        public GetRecommendationByDateRange {
+        public static GetRecommendationByDateRange of(Long regionId, LocalDate startDate, LocalDate endDate) {
             if (startDate != null && endDate != null) {
                 // 시작일이 종료일보다 늦을 수 없음
                 if (startDate.isAfter(endDate)) {
@@ -113,6 +118,8 @@ public class WeatherReqDTO {
                             "조회 가능한 날짜 범위를 벗어났습니다. (30일 전 ~ 7일 후)");
                 }
             }
+
+            return new GetRecommendationByDateRange(regionId, startDate, endDate);
         }
     }
 }
