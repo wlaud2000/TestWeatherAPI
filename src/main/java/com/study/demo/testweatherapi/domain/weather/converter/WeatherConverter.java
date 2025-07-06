@@ -67,6 +67,7 @@ public class WeatherConverter {
     public static WeatherResDTO.RecommendationInfo toRecommendationInfo(WeatherTemplate template) {
         List<String> keywords = template.getTemplateKeywords().stream()
                 .map(tk -> tk.getKeyword().getName())
+                .distinct()  // 중복 제거 추가
                 .collect(Collectors.toList());
 
         return WeatherResDTO.RecommendationInfo.builder()
@@ -142,6 +143,7 @@ public class WeatherConverter {
         WeatherTemplate template = recommendation.getWeatherTemplate();
         List<String> keywords = template.getTemplateKeywords().stream()
                 .map(tk -> tk.getKeyword().getName())
+                .distinct()  // 중복 제거 추가
                 .collect(Collectors.toList());
 
         return WeatherResDTO.DailyWeatherRecommendation.builder()
