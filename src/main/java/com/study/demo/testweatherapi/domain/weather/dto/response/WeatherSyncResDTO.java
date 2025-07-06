@@ -240,4 +240,75 @@ public class WeatherSyncResDTO {
             LocalDate newestDataDate            // 가장 최신 데이터 날짜
     ) {
     }
+
+    /**
+     * 상세한 데이터 정리 통계 (관리자용)
+     */
+    @Builder
+    public record DetailedCleanupStats(
+            LocalDate cutoffDate,                           // 기준 날짜
+            int shortTermRecordsFound,                      // 단기예보 삭제 대상
+            int mediumTermRecordsFound,                     // 중기예보 삭제 대상
+            int recommendationRecordsFound,                 // 추천정보 삭제 대상
+            int totalRecordsFound,                          // 전체 삭제 대상
+            List<RegionCleanupStats> regionStats,           // 지역별 통계
+            long estimatedSpaceSavingMB,                    // 예상 절약 공간
+            LocalDateTime previewGeneratedAt                // 통계 생성 시간
+    ) {
+    }
+
+    /**
+     * 지역별 정리 통계
+     */
+    @Builder
+    public record RegionCleanupStats(
+            String regionName,                              // 지역명
+            String dataType,                                // 데이터 타입 (단기예보/중기예보/추천정보)
+            int recordCount                                 // 해당 지역의 삭제 대상 레코드 수
+    ) {
+    }
+
+    /**
+     * 데이터 정리 작업 진행 상황 (실시간 모니터링용)
+     */
+    @Builder
+    public record CleanupProgress(
+            String currentTask,                             // 현재 작업 (단기예보정리/중기예보정리/추천정보정리)
+            int currentProgress,                            // 현재 진행률 (0-100)
+            int totalSteps,                                 // 전체 단계 수
+            int completedSteps,                             // 완료된 단계 수
+            LocalDateTime startTime,                        // 시작 시간
+            LocalDateTime estimatedEndTime,                 // 예상 완료 시간
+            String statusMessage                            // 상태 메시지
+    ) {
+    }
+
+    /**
+     * 데이터 정리 실행 계획 (사전 확인용)
+     */
+    @Builder
+    public record CleanupExecutionPlan(
+            LocalDate cutoffDate,                           // 기준 날짜
+            int retentionDays,                              // 보관 기간
+            List<CleanupTask> plannedTasks,                 // 계획된 작업들
+            long estimatedDurationMs,                       // 예상 소요 시간
+            long estimatedSpaceSavingMB,                    // 예상 절약 공간
+            List<String> warnings,                          // 경고 메시지
+            boolean safeToExecute,                          // 실행 안전성
+            LocalDateTime planGeneratedAt                   // 계획 생성 시간
+    ) {
+    }
+
+    /**
+     * 개별 정리 작업 정보
+     */
+    @Builder
+    public record CleanupTask(
+            String taskName,                                // 작업명 (단기예보정리/중기예보정리/추천정보정리)
+            String dataType,                                // 데이터 타입
+            int recordsToDelete,                            // 삭제 예정 레코드 수
+            long estimatedDurationMs,                       // 예상 소요 시간
+            String description                              // 작업 설명
+    ) {
+    }
 }

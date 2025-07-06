@@ -2,6 +2,7 @@ package com.study.demo.testweatherapi.domain.weather.repository;
 
 import com.study.demo.testweatherapi.domain.weather.entity.DailyRecommendation;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -80,10 +81,27 @@ public interface DailyRecommendationRepository extends JpaRepository<DailyRecomm
     boolean existsByRegionIdAndForecastDate(Long regionId, LocalDate forecastDate);
 
     /**
-     * 오래된 추천 데이터 삭제용 (스케줄러에서 사용)
+     * 오래된 추천 데이터 삭제용 (cutoffDate 이전)
+     * @return 삭제된 레코드 수
      */
+    @Modifying
     @Query("DELETE FROM DailyRecommendation dr WHERE dr.forecastDate < :cutoffDate")
-    void deleteOldRecommendations(@Param("cutoffDate") LocalDate cutoffDate);
+    int deleteOldRecommendations(@Param("cutoffDate") LocalDate cutoffDate);
+
+    /**
+     * 오래된 추천 데이터 개수 조회 (삭제 대상 확인용)
+     * @param cutoffDate 기준 날짜 (이 날짜 이전 데이터가 삭제 대상)
+     * @return 삭제 대상 레코드 수
+     */
+    @Query("SELECT COUNT(dr) FROM DailyRecommendation dr WHERE dr.forecastDate < :cutoffDate")
+    long countOldRecommendations(@Param("cutoffDate") LocalDate cutoffDate);
+
+    /**
+     * 오래된 추천 데이터 상세 정보 조회 (통계용)
+     */
+    @Query("SELECT MIN(dr.forecastDate), MAX(dr.forecastDate), COUNT(dr) " +
+            "FROM DailyRecommendation dr WHERE dr.forecastDate < :cutoffDate")
+    Object[] getOldRecommendationStatistics(@Param("cutoffDate") LocalDate cutoffDate);
 
     /**
      * 특정 지역의 추천 데이터 개수 조회
