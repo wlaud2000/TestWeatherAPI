@@ -198,21 +198,28 @@ public class WeatherDataCollectionService {
     }
 
     /**
-     * 단기 예보 API 호출
+     * 단기예보 API 호출
      */
     private String callShortTermWeatherApi(Region region, LocalDate baseDate, String baseTime) {
         try {
+            // BigDecimal 격자 좌표를 정수로 변환
+            int gridX = region.getGridX().intValue();  // 60.00 -> 60
+            int gridY = region.getGridY().intValue();  // 127.00 -> 127
+
+            log.debug("단기예보 API 호출: regionId={}, gridX={}, gridY={}, baseDate={}, baseTime={}",
+                    region.getId(), gridX, gridY, baseDate, baseTime);
+
             String response = webClient.get()
                     .uri(uriBuilder -> uriBuilder
-                            .path(shortTermForecastUrl)
+                            .path(shortTermForecastUrl)  // "/VilageFcst"
                             .queryParam("authKey", apiKey)
                             .queryParam("pageNo", 1)
-                            .queryParam("numOfRows", 1000)
+                            .queryParam("numOfRows", 1052)
                             .queryParam("dataType", "JSON")
                             .queryParam("base_date", baseDate.format(DateTimeFormatter.ofPattern("yyyyMMdd")))
                             .queryParam("base_time", baseTime)
-                            .queryParam("nx", region.getGridX())
-                            .queryParam("ny", region.getGridY())
+                            .queryParam("nx", gridX)
+                            .queryParam("ny", gridY)
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)
@@ -222,11 +229,14 @@ public class WeatherDataCollectionService {
                 throw new WeatherException(WeatherErrorCode.SHORT_TERM_FORECAST_ERROR);
             }
 
+            log.debug("단기예보 API 응답 수신 완료: regionId={}, 응답길이={}",
+                    region.getId(), response.length());
+
             return response;
 
         } catch (Exception e) {
-            log.error("단기 예보 API 호출 실패: regionId={}, baseDate={}, baseTime={}",
-                    region.getId(), baseDate, baseTime, e);
+            log.error("단기예보 API 호출 실패: regionId={}, gridX={}, gridY={}, baseDate={}, baseTime={}",
+                    region.getId(), region.getGridX(), region.getGridY(), baseDate, baseTime, e);
             throw new WeatherException(WeatherErrorCode.SHORT_TERM_FORECAST_ERROR);
         }
     }
@@ -363,20 +373,40 @@ public class WeatherDataCollectionService {
                 MediumTermTempData tempData = tempDataMap.get(key);
 
                 if (landData != null && tempData != null) {
-                    RawMediumTermWeather weather = RawMediumTermWeather.builder()
-                            .region(region)
-                            .tmfc(LocalDate.parse(landData.tmfc().substring(0, 8), DateTimeFormatter.ofPattern("yyyyMMdd")))
-                            .tmef(LocalDate.parse(landData.tmef().substring(0, 8), DateTimeFormatter.ofPattern("yyyyMMdd")))
-                            .sky(convertMediumTermSkyValue(landData.sky()))
-                            .pop(Double.parseDouble(landData.rnSt()))
-                            .minTmp(Double.parseDouble(tempData.min()))
-                            .maxTmp(Double.parseDouble(tempData.max()))
-                            .build();
+                    try {
+                        // 안전한 파싱으로 변경
+                        Double pop = parseDoubleValue(landData.rnSt(), "강수확률");
+                        Double minTmp = parseDoubleValue(tempData.min(), "최저기온");
+                        Double maxTmp = parseDoubleValue(tempData.max(), "최고기온");
 
-                    results.add(weather);
+                        // 모든 값이 유효한 경우만 저장
+                        if (pop != null && minTmp != null && maxTmp != null) {
+                            RawMediumTermWeather weather = RawMediumTermWeather.builder()
+                                    .region(region)
+                                    .tmfc(LocalDate.parse(landData.tmfc().substring(0, 8), DateTimeFormatter.ofPattern("yyyyMMdd")))
+                                    .tmef(LocalDate.parse(landData.tmef().substring(0, 8), DateTimeFormatter.ofPattern("yyyyMMdd")))
+                                    .sky(convertMediumTermSkyValue(landData.sky()))
+                                    .pop(pop)
+                                    .minTmp(minTmp)
+                                    .maxTmp(maxTmp)
+                                    .build();
+
+                            results.add(weather);
+                            log.debug("중기예보 파싱 성공: key={}, pop={}, minTmp={}, maxTmp={}",
+                                    key, pop, minTmp, maxTmp);
+                        } else {
+                            log.warn("중기예보 데이터 불완전하여 스킵: key={}, pop={}, minTmp={}, maxTmp={}",
+                                    key, landData.rnSt(), tempData.min(), tempData.max());
+                        }
+                    } catch (Exception e) {
+                        log.warn("중기예보 개별 데이터 파싱 실패 (스킵): key={}, landData={}, tempData={}, error={}",
+                                key, landData, tempData, e.getMessage());
+                    }
                 }
             }
 
+            log.info("중기예보 파싱 완료: regionId={}, 성공 {}/{} 건",
+                    region.getId(), results.size(), landDataMap.size());
             return results;
 
         } catch (Exception e) {
@@ -522,32 +552,114 @@ public class WeatherDataCollectionService {
     private Map<String, MediumTermTempData> parseMediumTermTempData(String response) {
         Map<String, MediumTermTempData> result = new HashMap<>();
 
-        Pattern pattern = Pattern.compile("#START7777(.*?)#7777END", Pattern.DOTALL);
-        Matcher matcher = pattern.matcher(response);
+        try {
+            Pattern pattern = Pattern.compile("#START7777(.*?)#7777END", Pattern.DOTALL);
+            Matcher matcher = pattern.matcher(response);
 
-        if (matcher.find()) {
-            String data = matcher.group(1);
-            String[] lines = data.split("\n");
+            if (matcher.find()) {
+                String data = matcher.group(1);
+                String[] lines = data.split("\n");
 
-            for (String line : lines) {
-                if (line.trim().isEmpty() || line.startsWith("#")) continue;
+                for (String line : lines) {
+                    if (line.trim().isEmpty() || line.startsWith("#")) continue;
 
-                String[] parts = line.trim().split("\\s+");
-                if (parts.length >= 7) {
-                    MediumTermTempData tempData = new MediumTermTempData(
-                            parts[1],  // TM_FC
-                            parts[2],  // TM_EF
-                            parts[3],  // MIN
-                            parts[4]   // MAX
-                    );
+                    String[] parts = line.trim().split("\\s+");
+                    if (parts.length >= 7) {
+                        try {
+                            MediumTermTempData tempData = new MediumTermTempData(
+                                    parts[1],  // TM_FC
+                                    parts[2],  // TM_EF
+                                    parts[3],  // MIN (여기서 "A01" 같은 값이 올 수 있음)
+                                    parts[4]   // MAX (여기서 "A01" 같은 값이 올 수 있음)
+                            );
 
-                    String key = parts[1] + "_" + parts[2];
-                    result.put(key, tempData);
+                            String key = parts[1] + "_" + parts[2];
+                            result.put(key, tempData);
+
+                            log.trace("중기 기온예보 라인 파싱: key={}, min={}, max={}",
+                                    key, parts[3], parts[4]);
+                        } catch (Exception e) {
+                            log.warn("중기 기온예보 라인 파싱 실패 (스킵): line='{}', error={}",
+                                    line.trim(), e.getMessage());
+                        }
+                    }
                 }
+            } else {
+                log.warn("중기 기온예보 응답에서 #START7777...#7777END 패턴을 찾을 수 없음");
             }
+        } catch (Exception e) {
+            log.error("중기 기온예보 전체 파싱 실패", e);
         }
 
+        log.debug("중기 기온예보 파싱 완료: {} 건", result.size());
         return result;
+    }
+
+    /**
+     * 문자열을 Double로 안전하게 파싱
+     * 기상청 API는 데이터가 없을 때 "A01", "A02" 등의 코드를 반환할 수 있음
+     */
+    private Double parseDoubleValue(String value, String fieldName) {
+        if (value == null || value.trim().isEmpty()) {
+            log.debug("{} 값이 비어있음", fieldName);
+            return null;
+        }
+
+        String trimmedValue = value.trim();
+
+        // 기상청 코드값 처리 (A01, A02, B01 등)
+        if (trimmedValue.matches("^[A-Z]\\d+$")) {
+            log.debug("{} 코드값 감지: {} -> 기본값 사용", fieldName, trimmedValue);
+            return getDefaultValueForCode(trimmedValue, fieldName);
+        }
+
+        // 숫자가 아닌 문자가 포함된 경우
+        if (!trimmedValue.matches("^-?\\d*\\.?\\d+$")) {
+            log.warn("{} 파싱 불가능한 값: {} -> null 반환", fieldName, trimmedValue);
+            return null;
+        }
+
+        try {
+            double parsedValue = Double.parseDouble(trimmedValue);
+
+            // 값 범위 검증
+            if (!isValidValue(parsedValue, fieldName)) {
+                log.warn("{} 값이 유효 범위를 벗어남: {} -> null 반환", fieldName, parsedValue);
+                return null;
+            }
+
+            return parsedValue;
+        } catch (NumberFormatException e) {
+            log.warn("{} 숫자 파싱 실패: {} -> null 반환", fieldName, trimmedValue);
+            return null;
+        }
+    }
+
+    /**
+     * 기상청 코드값에 대한 기본값 반환
+     */
+    private Double getDefaultValueForCode(String code, String fieldName) {
+        return switch (fieldName) {
+            case "강수확률" -> 30.0;  // 기본 강수확률 30%
+            case "최저기온" -> 15.0;  // 기본 최저기온 15도
+            case "최고기온" -> 25.0;  // 기본 최고기온 25도
+            default -> {
+                log.debug("알 수 없는 필드명: {}, 코드: {} -> 0.0 반환", fieldName, code);
+                yield 0.0;
+            }
+        };
+    }
+
+    /**
+     * 파싱된 값이 유효한 범위인지 검증
+     */
+    private boolean isValidValue(double value, String fieldName) {
+        return switch (fieldName) {
+            case "강수확률" -> value >= 0.0 && value <= 100.0;
+            case "최저기온" -> value >= -50.0 && value <= 50.0;
+            case "최고기온" -> value >= -50.0 && value <= 50.0;
+            default -> true;
+        };
     }
 
     // ==== 내부 데이터 클래스들 ====
